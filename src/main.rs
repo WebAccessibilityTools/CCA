@@ -9,17 +9,38 @@ use objc::{class, msg_send, sel, sel_impl};
 use objc::declare::ClassDecl;
 use objc::runtime::{Object, Sel};
 use core_graphics::display::CGDisplay;
-use core_graphics::window::{kCGWindowListOptionAll, kCGNullWindowID, kCGWindowImageDefault};
+use core_graphics::image::CGImage;
 use std::sync::Mutex;
 
 // Global state to store mouse position and color
 static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 
-#[derive(Clone)]
 struct MouseColorInfo {
     x: f64,
     y: f64,
+    screen_x: f64,
+    screen_y: f64,
     hex_color: String,
+}
+
+/// Captures a zoomed area around the cursor for the magnifier effect
+/// Returns a CGImage of the area
+fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
+    use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
+
+    // Convert Cocoa coordinates (origin bottom-left) to CG coordinates (origin top-left)
+    let main_display = CGDisplay::main();
+    let screen_height = main_display.pixels_high() as f64;
+    let cg_y = screen_height - y;
+
+    // Use the main display to capture directly from screen
+    let half_size = size / 2.0;
+    let rect = CGRect::new(
+        &CGPointStruct::new(x - half_size, cg_y - half_size),
+        &CGSize::new(size, size)
+    );
+
+    main_display.image_for_rect(rect)
 }
 
 /// Captures the color of the pixel at the given screen coordinates
@@ -27,19 +48,18 @@ struct MouseColorInfo {
 fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
     use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
 
-    // Create a 1x1 rect around the target pixel
+    // Convert Cocoa coordinates (origin bottom-left) to CG coordinates (origin top-left)
+    let main_display = CGDisplay::main();
+    let screen_height = main_display.pixels_high() as f64;
+    let cg_y = screen_height - y;
+
+    // Use the main display to capture directly from screen
     let rect = CGRect::new(
-        &CGPointStruct::new(x, y),
+        &CGPointStruct::new(x, cg_y),
         &CGSize::new(1.0, 1.0)
     );
 
-    // Capture screenshot of that rect
-    let image = CGDisplay::screenshot(
-        rect,
-        kCGWindowListOptionAll,
-        kCGNullWindowID,
-        kCGWindowImageDefault,
-    )?;
+    let image = main_display.image_for_rect(rect)?;
 
     // Get the pixel data
     let data = image.data();
@@ -59,6 +79,26 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
 }
 
 fn main() {
+    // Display instructions including permission requirements
+    println!("\n╔═══════════════════════════════════════════════════╗");
+    println!("║         Sélecteur de couleur - Color Picker      ║");
+    println!("╠═══════════════════════════════════════════════════╣");
+    println!("║  • Déplacez la souris pour capturer la couleur   ║");
+    println!("║  • Clic gauche ou ESC pour quitter               ║");
+    println!("╠═══════════════════════════════════════════════════╣");
+    println!("║  ⚠️  IMPORTANT - Permissions requises:            ║");
+    println!("║                                                   ║");
+    println!("║  Cette app nécessite la permission               ║");
+    println!("║  \"Enregistrement d'écran\"                         ║");
+    println!("║                                                   ║");
+    println!("║  Si les couleurs ne s'affichent pas:             ║");
+    println!("║  1. Ouvrez Préférences Système                   ║");
+    println!("║  2. Sécurité et confidentialité                  ║");
+    println!("║  3. Confidentialité > Enregistrement d'écran     ║");
+    println!("║  4. Activez cette application                    ║");
+    println!("║  5. Relancez l'application                       ║");
+    println!("╚═══════════════════════════════════════════════════╝\n");
+
     unsafe {
         let _pool = NSAutoreleasePool::new(nil);
 
@@ -103,6 +143,10 @@ fn main() {
             window.setHasShadow_(NO);
             window.setIgnoresMouseEvents_(NO); // We want to capture mouse events
             window.setAcceptsMouseMovedEvents_(YES); // Enable mouse moved events
+
+            // Exclude this window from screen captures so it doesn't interfere with color picking
+            // NSWindowSharingNone = 0
+            let _: () = msg_send![window, setSharingType: 0u64];
 
             // Create and set the custom view
             let view: id = msg_send![view_class, alloc];
@@ -184,6 +228,8 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
                 *state = Some(MouseColorInfo {
                     x: location.x,
                     y: location.y,
+                    screen_x: screen_location.x,
+                    screen_y: screen_location.y,
                     hex_color: hex_color.clone(),
                 });
             }
@@ -223,9 +269,105 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
         let bounds: NSRect = msg_send![_this, bounds];
         cocoa::appkit::NSRectFill(bounds);
 
-        // Draw the hex color value near the mouse cursor
+        // Draw the magnifier/zoom effect and hex color value near the mouse cursor
         if let Ok(state) = MOUSE_STATE.lock() {
             if let Some(ref info) = *state {
+                // Capture and draw the magnifier
+                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, 20.0) {
+                    // Convert CGImage to NSImage
+                    let ns_image_cls = class!(NSImage);
+                    let ns_image: id = msg_send![ns_image_cls, alloc];
+
+                    // Create NSImage from CGImage using initWithCGImage:size:
+                    let size = cocoa::foundation::NSSize::new(
+                        cg_image.width() as f64,
+                        cg_image.height() as f64
+                    );
+
+                    // Get CGImageRef from CGImage
+                    // CGImage internally holds a CGImageRef as a pointer
+                    let cg_image_ptr = {
+                        use core_graphics::sys::CGImageRef;
+                        let ptr_addr = &cg_image as *const CGImage as *const *const core_graphics::sys::CGImage;
+                        unsafe { *ptr_addr }
+                    };
+                    let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:size];
+
+                    // Define magnifier size (5x zoom)
+                    let mag_size = 100.0; // 20 pixels * 5 = 100
+                    let mag_x = info.x - mag_size / 2.0;
+                    let mag_y = info.y + 30.0; // Position above cursor
+
+                    let mag_rect = NSRect::new(
+                        NSPoint::new(mag_x, mag_y),
+                        cocoa::foundation::NSSize::new(mag_size, mag_size)
+                    );
+
+                    // Draw black border around magnifier
+                    let black_color: id = msg_send![cls, blackColor];
+                    let _: () = msg_send![black_color, setStroke];
+                    let border_path_cls = class!(NSBezierPath);
+                    let border_path: id = msg_send![border_path_cls, bezierPathWithRect: mag_rect];
+                    let _: () = msg_send![border_path, setLineWidth: 3.0];
+                    let _: () = msg_send![border_path, stroke];
+
+                    // Draw the magnified image
+                    let from_rect = NSRect::new(
+                        NSPoint::new(0.0, 0.0),
+                        size
+                    );
+                    let _: () = msg_send![ns_image, drawInRect:mag_rect
+                                          fromRect:from_rect
+                                          operation:2u64  // NSCompositingOperationSourceOver
+                                          fraction:1.0];
+
+                    // Draw pixel grid (20x20 pixels captured, each pixel is 5x5 in the magnifier)
+                    let pixel_size = mag_size / 20.0; // 100 / 20 = 5
+                    let center_x = mag_x + mag_size / 2.0;
+                    let center_y = mag_y + mag_size / 2.0;
+                    let reticle_radius = pixel_size * 0.8;
+
+                    // Save graphics state
+                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+
+                    // Create a clipping path that excludes the reticle area
+                    let path_cls = class!(NSBezierPath);
+
+                    // Create outer rect
+                    let clip_path: id = msg_send![path_cls, bezierPathWithRect: mag_rect];
+
+                    // Create inner circle - ensure the rect is perfectly square for a perfect circle
+                    let center_point = NSPoint::new(center_x, center_y);
+                    let pi = std::f64::consts::PI;
+
+                    // Create a perfectly square rect for the circle
+                    let diameter = reticle_radius * 2.0;
+                    let circle_rect = NSRect::new(
+                        NSPoint::new(center_x - reticle_radius, center_y - reticle_radius),
+                        cocoa::foundation::NSSize::new(diameter, diameter)
+                    );
+                    let circle_path: id = msg_send![path_cls, bezierPathWithOvalInRect: circle_rect];
+
+                    // Append circle as a hole
+                    let _: () = msg_send![clip_path, appendBezierPath: circle_path];
+                    let _: () = msg_send![clip_path, setWindingRule: 1]; // NSEvenOddWindingRule
+                    let _: () = msg_send![clip_path, addClip];
+
+                    let grid_color: id = msg_send![cls, colorWithCalibratedWhite:1.0 alpha:0.3];
+                    let _: () = msg_send![grid_color, setStroke];
+
+                    // Restore graphics state (remove clipping)
+                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+
+                    // Draw white circle outline for reticle - use the same square rect
+                    let white_color: id = msg_send![cls, whiteColor];
+                    let _: () = msg_send![white_color, setStroke];
+
+                    let reticle_path: id = msg_send![path_cls, bezierPathWithOvalInRect: circle_rect];
+                    let _: () = msg_send![reticle_path, setLineWidth: 2.0];
+                    let _: () = msg_send![reticle_path, stroke];
+                }
+
                 // Set up font
                 let font_cls = class!(NSFont);
                 let font: id = msg_send![font_cls, boldSystemFontOfSize: 18.0];
