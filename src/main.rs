@@ -1,5 +1,5 @@
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSAutoreleasePool, NSRect, NSArray, NSPoint};
+use cocoa::foundation::{NSAutoreleasePool, NSRect, NSArray, NSPoint, NSString};
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSWindow, NSWindowStyleMask,
@@ -10,6 +10,17 @@ use objc::declare::ClassDecl;
 use objc::runtime::{Object, Sel};
 use core_graphics::display::CGDisplay;
 use core_graphics::window::{kCGWindowListOptionAll, kCGNullWindowID, kCGWindowImageDefault};
+use std::sync::Mutex;
+
+// Global state to store mouse position and color
+static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
+
+#[derive(Clone)]
+struct MouseColorInfo {
+    x: f64,
+    y: f64,
+    hex_color: String,
+}
 
 /// Captures the color of the pixel at the given screen coordinates
 /// Returns (r, g, b) as f64 values in range 0.0-1.0
@@ -48,14 +59,6 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
 }
 
 fn main() {
-    // Display instructions
-    println!("\n╔═══════════════════════════════════════════════════╗");
-    println!("║         Sélecteur de couleur - Color Picker      ║");
-    println!("╠═══════════════════════════════════════════════════╣");
-    println!("║  • Déplacez la souris pour capturer la couleur   ║");
-    println!("║  • Clic gauche ou ESC pour quitter               ║");
-    println!("╚═══════════════════════════════════════════════════╝\n");
-
     unsafe {
         let _pool = NSAutoreleasePool::new(nil);
 
@@ -108,6 +111,9 @@ fn main() {
 
             // Make window key and visible
             window.makeKeyAndOrderFront_(nil);
+
+            // Make the window and view first responder to receive key events
+            let _: () = msg_send![window, makeFirstResponder: view];
         }
 
         // Activate the app to ensure it captures input immediately
@@ -156,8 +162,10 @@ extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
 
 extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
     unsafe {
-        // Get mouse location in screen coordinates
+        // Get mouse location in window coordinates (for drawing)
         let location: NSPoint = msg_send![event, locationInWindow];
+
+        // Get mouse location in screen coordinates (for color picking)
         let window: id = msg_send![_this, window];
         let screen_location: NSPoint = msg_send![window, convertPointToScreen: location];
 
@@ -168,12 +176,27 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
             let g_int = (g * 255.0) as u8;
             let b_int = (b * 255.0) as u8;
 
+            // Create hex string
+            let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+
+            // Update global state
+            if let Ok(mut state) = MOUSE_STATE.lock() {
+                *state = Some(MouseColorInfo {
+                    x: location.x,
+                    y: location.y,
+                    hex_color: hex_color.clone(),
+                });
+            }
+
             // Display in terminal with ANSI escape codes to overwrite the previous line
             print!("\r\x1B[K"); // Clear line
-            print!("RGB: ({:3}, {:3}, {:3})  |  HEX: #{:02X}{:02X}{:02X}  ",
-                   r_int, g_int, b_int, r_int, g_int, b_int);
+            print!("RGB: ({:3}, {:3}, {:3})  |  HEX: {}  ",
+                   r_int, g_int, b_int, hex_color);
             use std::io::{self, Write};
             io::stdout().flush().unwrap();
+
+            // Request view redraw
+            let _: () = msg_send![_this, setNeedsDisplay: YES];
         }
     }
 }
@@ -194,11 +217,61 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
         // Draw a very faint black overlay to indicate the shield is active (optional)
         // 5% opacity black
         let cls = class!(NSColor);
-        let color: id = msg_send![cls, colorWithCalibratedWhite:0.0 alpha:0.5];
+        let color: id = msg_send![cls, colorWithCalibratedWhite:0.0 alpha:0.05];
 
         let _: () = msg_send![color, set];
         let bounds: NSRect = msg_send![_this, bounds];
         cocoa::appkit::NSRectFill(bounds);
+
+        // Draw the hex color value near the mouse cursor
+        if let Ok(state) = MOUSE_STATE.lock() {
+            if let Some(ref info) = *state {
+                // Set up font
+                let font_cls = class!(NSFont);
+                let font: id = msg_send![font_cls, boldSystemFontOfSize: 18.0];
+
+                // Create NSString from the hex color
+                let ns_str = NSString::alloc(nil);
+                let ns_str = NSString::init_str(ns_str, &info.hex_color);
+
+                // Calculate text size for background
+                let white_color: id = msg_send![cls, whiteColor];
+
+                // Create attributes dictionary
+                let dict_cls = class!(NSDictionary);
+                let ns_string_cls = class!(NSString);
+
+                // Get the proper attribute key names from NSAttributedString
+                let font_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSFont".as_ptr()];
+                let color_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSForegroundColor".as_ptr()];
+
+                let keys: Vec<id> = vec![font_attr_name, color_attr_name];
+                let values: Vec<id> = vec![font, white_color];
+
+                let attributes: id = msg_send![dict_cls, dictionaryWithObjects:values.as_ptr() forKeys:keys.as_ptr() count:2usize];
+
+                // Calculate text position (to the right of the cursor)
+                let text_x = info.x + 20.0;
+                let text_y = info.y - 8.0;
+                let text_point = NSPoint::new(text_x, text_y);
+
+                // Draw background rectangle for better visibility
+                let text_size: cocoa::foundation::NSSize = msg_send![ns_str, sizeWithAttributes: attributes];
+                let padding = 8.0;
+                let bg_rect = NSRect::new(
+                    NSPoint::new(text_x - padding, text_y - padding / 2.0),
+                    cocoa::foundation::NSSize::new(text_size.width + padding * 2.0, text_size.height + padding)
+                );
+
+                // Draw black background with full opacity
+                let bg_color: id = msg_send![cls, whiteColor];
+                let _: () = msg_send![bg_color, setFill];
+                cocoa::appkit::NSRectFill(bg_rect);
+
+                // Draw the text
+                let _: () = msg_send![ns_str, drawAtPoint:text_point withAttributes:attributes];
+            }
+        }
     }
 }
 
