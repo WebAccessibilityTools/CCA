@@ -1,15 +1,61 @@
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSAutoreleasePool, NSRect, NSArray};
+use cocoa::foundation::{NSAutoreleasePool, NSRect, NSArray, NSPoint};
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
-    NSColor, NSWindow, NSWindowStyleMask, NSEvent,
-    NSRunningApplication, NSApplicationActivateIgnoringOtherApps, NSScreen, NSView
+    NSWindow, NSWindowStyleMask,
+    NSRunningApplication, NSApplicationActivateIgnoringOtherApps, NSScreen
 };
 use objc::{class, msg_send, sel, sel_impl};
 use objc::declare::ClassDecl;
 use objc::runtime::{Object, Sel};
+use core_graphics::display::CGDisplay;
+use core_graphics::window::{kCGWindowListOptionAll, kCGNullWindowID, kCGWindowImageDefault};
+
+/// Captures the color of the pixel at the given screen coordinates
+/// Returns (r, g, b) as f64 values in range 0.0-1.0
+fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
+    use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
+
+    // Create a 1x1 rect around the target pixel
+    let rect = CGRect::new(
+        &CGPointStruct::new(x, y),
+        &CGSize::new(1.0, 1.0)
+    );
+
+    // Capture screenshot of that rect
+    let image = CGDisplay::screenshot(
+        rect,
+        kCGWindowListOptionAll,
+        kCGNullWindowID,
+        kCGWindowImageDefault,
+    )?;
+
+    // Get the pixel data
+    let data = image.data();
+    let data_len = data.len() as usize;
+
+    // We should have at least 4 bytes (BGRA format)
+    if data_len >= 4 {
+        // Most Mac displays use BGRA format
+        let b = data[0] as f64 / 255.0;
+        let g = data[1] as f64 / 255.0;
+        let r = data[2] as f64 / 255.0;
+
+        Some((r, g, b))
+    } else {
+        None
+    }
+}
 
 fn main() {
+    // Display instructions
+    println!("\n╔═══════════════════════════════════════════════════╗");
+    println!("║         Sélecteur de couleur - Color Picker      ║");
+    println!("╠═══════════════════════════════════════════════════╣");
+    println!("║  • Déplacez la souris pour capturer la couleur   ║");
+    println!("║  • Clic gauche ou ESC pour quitter               ║");
+    println!("╚═══════════════════════════════════════════════════╝\n");
+
     unsafe {
         let _pool = NSAutoreleasePool::new(nil);
 
@@ -53,6 +99,7 @@ fn main() {
             window.setOpaque_(NO);
             window.setHasShadow_(NO);
             window.setIgnoresMouseEvents_(NO); // We want to capture mouse events
+            window.setAcceptsMouseMovedEvents_(YES); // Enable mouse moved events
 
             // Create and set the custom view
             let view: id = msg_send![view_class, alloc];
@@ -82,6 +129,9 @@ fn register_view_class() -> &'static objc::runtime::Class {
         // Handle mouse down - Exit on click
         decl.add_method(sel!(mouseDown:), mouse_down as extern "C" fn(&Object, Sel, id));
 
+        // Handle mouse moved - Capture color
+        decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
+
         // Handle key down - Exit on ESC
         decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, id));
 
@@ -101,6 +151,30 @@ extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
     unsafe {
         let app = NSApp();
         let _: () = msg_send![app, terminate:nil];
+    }
+}
+
+extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
+    unsafe {
+        // Get mouse location in screen coordinates
+        let location: NSPoint = msg_send![event, locationInWindow];
+        let window: id = msg_send![_this, window];
+        let screen_location: NSPoint = msg_send![window, convertPointToScreen: location];
+
+        // Get the color at this pixel
+        if let Some((r, g, b)) = get_pixel_color(screen_location.x as f64, screen_location.y as f64) {
+            // Convert to 0-255 range
+            let r_int = (r * 255.0) as u8;
+            let g_int = (g * 255.0) as u8;
+            let b_int = (b * 255.0) as u8;
+
+            // Display in terminal with ANSI escape codes to overwrite the previous line
+            print!("\r\x1B[K"); // Clear line
+            print!("RGB: ({:3}, {:3}, {:3})  |  HEX: #{:02X}{:02X}{:02X}  ",
+                   r_int, g_int, b_int, r_int, g_int, b_int);
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+        }
     }
 }
 
