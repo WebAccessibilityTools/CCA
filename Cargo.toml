@@ -1,10 +1,17 @@
 [package]
-name = "color_picker"
+name = "macos-color-picker"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Cocoa framework bindings for macOS GUI
+# Provides NSApplication, NSWindow, NSView, etc.
 cocoa = "0.26"
+
+# Objective-C runtime bindings
+# Provides msg_send! macro for calling Objective-C methods
 objc = "0.2"
-core-graphics = "0.25"
-core-foundation = "0.10"
+
+# Core Graphics bindings for screen capture
+# Provides CGDisplay, CGImage for capturing screen pixels
+core-graphics = "0.23"
