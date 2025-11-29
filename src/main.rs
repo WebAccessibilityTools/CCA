@@ -31,10 +31,22 @@ const ZOOM_FACTOR: f64 = 20.0;
 /// Number of pixels to move when pressing Shift + Arrow key
 const SHIFT_MOVE_PIXELS: f64 = 50.0;
 
+/// Minimum zoom factor
+const ZOOM_MIN: f64 = 15.0;
+
+/// Maximum zoom factor
+const ZOOM_MAX: f64 = 50.0;
+
+/// Zoom increment per scroll step
+const ZOOM_STEP: f64 = 2.0;
+
 // ============================================================================
 
 // Global state to store mouse position and color
 static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
+
+// Global state for current zoom level
+static CURRENT_ZOOM: Mutex<f64> = Mutex::new(ZOOM_FACTOR);
 
 struct MouseColorInfo {
     x: f64,
@@ -207,6 +219,9 @@ fn register_view_class() -> &'static objc::runtime::Class {
         // Handle mouse moved - Capture color
         decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
 
+        // Handle scroll wheel - Adjust zoom level
+        decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, id));
+
         // Handle key down - Exit on ESC
         decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, id));
 
@@ -284,6 +299,25 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
             use std::io::{self, Write};
             io::stdout().flush().unwrap();
 
+            // Request view redraw
+            let _: () = msg_send![_this, setNeedsDisplay: YES];
+        }
+    }
+}
+
+extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: id) {
+    unsafe {
+        // Get scroll delta (deltaY is positive when scrolling up)
+        let delta_y: f64 = msg_send![event, deltaY];
+        
+        if delta_y != 0.0 {
+            // Update zoom level
+            if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                // Scroll up = zoom in (increase), scroll down = zoom out (decrease)
+                let new_zoom = *zoom + delta_y * ZOOM_STEP;
+                *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+            }
+            
             // Request view redraw
             let _: () = msg_send![_this, setNeedsDisplay: YES];
         }
@@ -409,8 +443,12 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     );
                     let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:size];
 
-                    // Define magnifier size
-                    let mag_size = CAPTURED_PIXELS * ZOOM_FACTOR;
+                    // Define magnifier size using current zoom level
+                    let current_zoom = match CURRENT_ZOOM.lock() {
+                        Ok(z) => *z,
+                        Err(_) => ZOOM_FACTOR,
+                    };
+                    let mag_size = CAPTURED_PIXELS * current_zoom;
                     let mag_x = info.x - mag_size / 2.0;
                     let mag_y = info.y - mag_size / 2.0;
 
@@ -474,9 +512,15 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
                     
                     // Draw thick colored border
+                    // Create a rect for the border that's outside the magnifier
+                    // The border should be drawn at mag_size/2 + BORDER_WIDTH/2 from center
+                    let border_rect = NSRect::new(
+                        NSPoint::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
+                        cocoa::foundation::NSSize::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
+                    );
                     let border_color: id = msg_send![cls, colorWithCalibratedRed:r_val green:g_val blue:b_val alpha:1.0];
                     let _: () = msg_send![border_color, setStroke];
-                    let border_path: id = msg_send![path_cls, bezierPathWithOvalInRect: mag_rect];
+                    let border_path: id = msg_send![path_cls, bezierPathWithOvalInRect: border_rect];
                     let _: () = msg_send![border_path, setLineWidth: BORDER_WIDTH];
                     let _: () = msg_send![border_path, stroke];
 
@@ -512,10 +556,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     // Draw each character of the hex color along the arc
                     let hex_text = &info.hex_color;
                     let char_count = hex_text.len() as f64;
-                    // The border is drawn on mag_rect (radius = mag_size/2) with stroke width border_width.
-                    // The stroke extends half inside and half outside, so the center of the border
-                    // is exactly at mag_size/2 from the center.
-                    let radius = mag_size / 2.0;
+                    // The border is drawn outside the magnifier at radius = mag_size/2 + BORDER_WIDTH/2
+                    // The center of the border stroke is at mag_size/2 + BORDER_WIDTH/2
+                    let radius = mag_size / 2.0 + BORDER_WIDTH / 2.0;
                     
                     // Arc spans at top of circle (90 degrees), text readable normally
                     // Tighter angle span for letters closer together
