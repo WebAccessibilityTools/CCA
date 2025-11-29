@@ -61,9 +61,10 @@ const BORDER_WIDTH: f64 = 20.0;
 const HEX_FONT_SIZE: f64 = 14.0;
 
 /// Number of screen pixels captured by the magnifier
+/// Must be ODD to have a single center pixel for the reticle
 /// Smaller value = more zoom, larger value = less zoom
 /// This determines how many pixels are visible in the magnifier
-const CAPTURED_PIXELS: f64 = 8.0;
+const CAPTURED_PIXELS: f64 = 9.0;
 
 /// Default zoom factor for the magnifier
 /// magnifier_size = CAPTURED_PIXELS * ZOOM_FACTOR
@@ -109,6 +110,7 @@ struct MouseColorInfo {
     screen_x: f64,    // X position in screen coordinates (for capture)
     screen_y: f64,    // Y position in screen coordinates (for capture)
     hex_color: String, // Color as hex string like "#FF5733"
+    scale_factor: f64, // Retina scale factor (1.0 = standard, 2.0 = Retina)
 }
 
 // =============================================================================
@@ -493,12 +495,17 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
 
             // Update the global state with new position and color
             if let Ok(mut state) = MOUSE_STATE.lock() {
+                // Get screen's backing scale factor for Retina support
+                let screen: id = msg_send![window, screen];
+                let scale_factor: f64 = msg_send![screen, backingScaleFactor];
+                
                 *state = Some(MouseColorInfo {
                     x: location.x,
                     y: location.y,
                     screen_x: screen_location.x,
                     screen_y: screen_location.y,
                     hex_color: hex_color.clone(),
+                    scale_factor,
                 });
             }
 
@@ -657,12 +664,17 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                     // Convert screen coordinates to window coordinates
                     let window_point: NSPoint = msg_send![window, convertPointFromScreen: screen_point];
 
+                    // Get screen's backing scale factor for Retina support
+                    let screen: id = msg_send![window, screen];
+                    let scale_factor: f64 = msg_send![screen, backingScaleFactor];
+
                     *state = Some(MouseColorInfo {
                         x: window_point.x,
                         y: window_point.y,
                         screen_x: new_x,
                         screen_y: cocoa_y,
                         hex_color: hex_color.clone(),
+                        scale_factor,
                     });
                 }
 
@@ -732,11 +744,20 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                 };
 
                 // Calculate magnifier size based on zoom
-                // mag_size = number of captured pixels * zoom factor
+                // mag_size = number of displayed pixels * zoom factor
                 let mag_size = CAPTURED_PIXELS * current_zoom;
 
+                // On Retina, we need to capture fewer points to get the desired number of physical pixels
+                // We want an ODD number of physical pixels for proper center alignment
+                // CAPTURED_PIXELS / scale_factor gives us the points needed
+                let capture_points = CAPTURED_PIXELS / info.scale_factor;
+                
                 // Capture the screen area around the cursor
-                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, CAPTURED_PIXELS) {
+                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_points) {
+                    
+                    // Get actual number of pixels in the captured image
+                    // This should be approximately CAPTURED_PIXELS (9) on all displays
+                    let actual_captured_pixels = cg_image.width() as f64;
 
                     // =============================================================
                     // CREATE NSIMAGE FROM CGIMAGE
@@ -823,9 +844,11 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     // =============================================================
 
                     // Calculate size of one magnified pixel
-                    let pixel_size = mag_size / CAPTURED_PIXELS;
+                    // Use actual captured pixels count for correct sizing on Retina
+                    let pixel_size = mag_size / actual_captured_pixels;
 
                     // Calculate center of magnifier
+                    // With an odd number of pixels (9 or 18), the center falls exactly on a pixel
                     let center_x = mag_x + mag_size / 2.0;
                     let center_y = mag_y + mag_size / 2.0;
 
