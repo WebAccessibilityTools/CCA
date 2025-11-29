@@ -28,6 +28,9 @@ const CAPTURED_PIXELS: f64 = 8.0;
 /// Zoom factor for the magnifier (magnifier size = CAPTURED_PIXELS * ZOOM_FACTOR)
 const ZOOM_FACTOR: f64 = 20.0;
 
+/// Number of pixels to move when pressing Shift + Arrow key
+const SHIFT_MOVE_PIXELS: f64 = 50.0;
+
 // ============================================================================
 
 // Global state to store mouse position and color
@@ -290,12 +293,85 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
 extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
     unsafe {
         let key_code: u16 = msg_send![event, keyCode];
+        let modifier_flags: u64 = msg_send![event, modifierFlags];
+        
+        // Check if Shift is pressed (NSEventModifierFlagShift = 1 << 17)
+        let shift_pressed = (modifier_flags & (1 << 17)) != 0;
+        let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
+        
         // 53 is the key code for Escape on macOS
         if key_code == 53 {
             // Show the cursor again before exiting
             let _: () = msg_send![class!(NSCursor), unhide];
             let app = NSApp();
             let _: () = msg_send![app, terminate:nil];
+        }
+        
+        // Arrow keys: 123=Left, 124=Right, 125=Down, 126=Up
+        let (dx, dy): (f64, f64) = match key_code {
+            123 => (-move_amount, 0.0),  // Left
+            124 => (move_amount, 0.0),   // Right
+            125 => (0.0, -move_amount),  // Down (screen coords: down = negative y)
+            126 => (0.0, move_amount),   // Up
+            _ => (0.0, 0.0),
+        };
+        
+        if dx != 0.0 || dy != 0.0 {
+            // Get current mouse position
+            let cg_event = core_graphics::event::CGEvent::new(core_graphics::event_source::CGEventSource::new(core_graphics::event_source::CGEventSourceStateID::HIDSystemState).unwrap()).unwrap();
+            let current_pos = cg_event.location();
+            
+            // Calculate new position
+            let new_x = current_pos.x + dx;
+            let new_y = current_pos.y - dy; // CG coordinates: y increases downward
+            
+            // Move the mouse cursor
+            let new_pos = core_graphics::geometry::CGPoint::new(new_x, new_y);
+            let move_event = core_graphics::event::CGEvent::new_mouse_event(
+                core_graphics::event_source::CGEventSource::new(core_graphics::event_source::CGEventSourceStateID::HIDSystemState).unwrap(),
+                core_graphics::event::CGEventType::MouseMoved,
+                new_pos,
+                core_graphics::event::CGMouseButton::Left,
+            ).unwrap();
+            move_event.post(core_graphics::event::CGEventTapLocation::HID);
+            
+            // Update the color at new position
+            // Convert CG coordinates to Cocoa coordinates for color picking
+            let main_display = CGDisplay::main();
+            let screen_height = main_display.pixels_high() as f64;
+            let cocoa_y = screen_height - new_y;
+            
+            if let Some((r, g, b)) = get_pixel_color(new_x, cocoa_y) {
+                let r_int = (r * 255.0) as u8;
+                let g_int = (g * 255.0) as u8;
+                let b_int = (b * 255.0) as u8;
+                let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+                
+                // Update global state
+                if let Ok(mut state) = MOUSE_STATE.lock() {
+                    // Get window for coordinate conversion
+                    let window: id = msg_send![_this, window];
+                    let screen_point = NSPoint::new(new_x, cocoa_y);
+                    let window_point: NSPoint = msg_send![window, convertPointFromScreen: screen_point];
+                    
+                    *state = Some(MouseColorInfo {
+                        x: window_point.x,
+                        y: window_point.y,
+                        screen_x: new_x,
+                        screen_y: cocoa_y,
+                        hex_color: hex_color.clone(),
+                    });
+                }
+                
+                // Display in terminal
+                print!("\r\x1B[K");
+                print!("RGB: ({:3}, {:3}, {:3})  |  HEX: {}  ", r_int, g_int, b_int, hex_color);
+                use std::io::{self, Write};
+                io::stdout().flush().unwrap();
+                
+                // Request view redraw
+                let _: () = msg_send![_this, setNeedsDisplay: YES];
+            }
         }
     }
 }
