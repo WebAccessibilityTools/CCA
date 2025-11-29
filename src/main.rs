@@ -12,6 +12,24 @@ use core_graphics::display::CGDisplay;
 use core_graphics::image::CGImage;
 use std::sync::Mutex;
 
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+/// Thickness of the colored border around the magnifier (in pixels)
+const BORDER_WIDTH: f64 = 20.0;
+
+/// Font size for the hex color text displayed on the border (in points)
+const HEX_FONT_SIZE: f64 = 14.0;
+
+/// Number of screen pixels captured by the magnifier
+const CAPTURED_PIXELS: f64 = 8.0;
+
+/// Zoom factor for the magnifier (magnifier size = CAPTURED_PIXELS * ZOOM_FACTOR)
+const ZOOM_FACTOR: f64 = 20.0;
+
+// ============================================================================
+
 // Global state to store mouse position and color
 static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 
@@ -24,7 +42,6 @@ struct MouseColorInfo {
 }
 
 /// Captures a zoomed area around the cursor for the magnifier effect
-/// Returns a CGImage of the area
 fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
     use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
 
@@ -53,12 +70,13 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
     let screen_height = main_display.pixels_high() as f64;
     let cg_y = screen_height - y;
 
-    // Use the main display to capture directly from screen
+    // Create a 1x1 rect around the target pixel
     let rect = CGRect::new(
         &CGPointStruct::new(x, cg_y),
         &CGSize::new(1.0, 1.0)
     );
 
+    // Capture screenshot directly from display
     let image = main_display.image_for_rect(rect)?;
 
     // Get the pixel data
@@ -108,6 +126,9 @@ fn main() {
 
         // Register our custom view class to handle events
         let view_class = register_view_class();
+        
+        // Register our custom window class that can become key window
+        let window_class = register_window_class();
 
         // Create a window for each screen to cover the entire desktop
         let screens = NSScreen::screens(nil);
@@ -118,9 +139,8 @@ fn main() {
             // Use msg_send! for frame to avoid trait ambiguity (NSScreen vs NSView)
             let frame: NSRect = msg_send![screen, frame];
 
-            // Create the window
-            // Use msg_send! for alloc to avoid trait ambiguity with NSWindow
-            let window_alloc: id = msg_send![class!(NSWindow), alloc];
+            // Create the window using our custom KeyableWindow class
+            let window_alloc: id = msg_send![window_class, alloc];
             let window = window_alloc.initWithContentRect_styleMask_backing_defer_(
                 frame,
                 NSWindowStyleMask::NSBorderlessWindowMask,
@@ -144,9 +164,8 @@ fn main() {
             window.setIgnoresMouseEvents_(NO); // We want to capture mouse events
             window.setAcceptsMouseMovedEvents_(YES); // Enable mouse moved events
 
-            // Exclude this window from screen captures so it doesn't interfere with color picking
-            // NSWindowSharingNone = 0
-            let _: () = msg_send![window, setSharingType: 0u64];
+            // Exclude this window from screen captures
+            let _: () = msg_send![window, setSharingType: 0u64]; // NSWindowSharingNone
 
             // Create and set the custom view
             let view: id = msg_send![view_class, alloc];
@@ -163,6 +182,9 @@ fn main() {
         // Activate the app to ensure it captures input immediately
         let current_app = NSRunningApplication::currentApplication(nil);
         current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
+
+        // Hide the mouse cursor
+        let _: () = msg_send![class!(NSCursor), hide];
 
         app.run();
     }
@@ -192,6 +214,22 @@ fn register_view_class() -> &'static objc::runtime::Class {
     decl.register()
 }
 
+fn register_window_class() -> &'static objc::runtime::Class {
+    let superclass = class!(NSWindow);
+    let mut decl = ClassDecl::new("KeyableWindow", superclass).unwrap();
+
+    unsafe {
+        // Allow borderless window to become key window (receive keyboard events)
+        decl.add_method(sel!(canBecomeKeyWindow), can_become_key_window as extern "C" fn(&Object, Sel) -> bool);
+    }
+
+    decl.register()
+}
+
+extern "C" fn can_become_key_window(_this: &Object, _cmd: Sel) -> bool {
+    YES
+}
+
 extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool {
     YES
 }
@@ -199,6 +237,8 @@ extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool {
 extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
     // Exit on left click
     unsafe {
+        // Show the cursor again before exiting
+        let _: () = msg_send![class!(NSCursor), unhide];
         let app = NSApp();
         let _: () = msg_send![app, terminate:nil];
     }
@@ -252,6 +292,8 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
         let key_code: u16 = msg_send![event, keyCode];
         // 53 is the key code for Escape on macOS
         if key_code == 53 {
+            // Show the cursor again before exiting
+            let _: () = msg_send![class!(NSCursor), unhide];
             let app = NSApp();
             let _: () = msg_send![app, terminate:nil];
         }
@@ -273,147 +315,188 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
         if let Ok(state) = MOUSE_STATE.lock() {
             if let Some(ref info) = *state {
                 // Capture and draw the magnifier
-                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, 20.0) {
+                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, CAPTURED_PIXELS) {
                     // Convert CGImage to NSImage
                     let ns_image_cls = class!(NSImage);
                     let ns_image: id = msg_send![ns_image_cls, alloc];
 
-                    // Create NSImage from CGImage using initWithCGImage:size:
+                    // Get CGImageRef from CGImage
+                    let cg_image_ptr = {
+                        use core_graphics::sys::CGImageRef;
+                        let ptr_addr = &cg_image as *const CGImage as *const *const core_graphics::sys::CGImage;
+                        *ptr_addr
+                    };
+
                     let size = cocoa::foundation::NSSize::new(
                         cg_image.width() as f64,
                         cg_image.height() as f64
                     );
-
-                    // Get CGImageRef from CGImage
-                    // CGImage internally holds a CGImageRef as a pointer
-                    let cg_image_ptr = {
-                        use core_graphics::sys::CGImageRef;
-                        let ptr_addr = &cg_image as *const CGImage as *const *const core_graphics::sys::CGImage;
-                        unsafe { *ptr_addr }
-                    };
                     let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:size];
 
-                    // Define magnifier size (5x zoom)
-                    let mag_size = 100.0; // 20 pixels * 5 = 100
+                    // Define magnifier size
+                    let mag_size = CAPTURED_PIXELS * ZOOM_FACTOR;
                     let mag_x = info.x - mag_size / 2.0;
-                    let mag_y = info.y + 30.0; // Position above cursor
+                    let mag_y = info.y - mag_size / 2.0;
 
                     let mag_rect = NSRect::new(
                         NSPoint::new(mag_x, mag_y),
                         cocoa::foundation::NSSize::new(mag_size, mag_size)
                     );
 
-                    // Draw black border around magnifier
-                    let black_color: id = msg_send![cls, blackColor];
-                    let _: () = msg_send![black_color, setStroke];
-                    let border_path_cls = class!(NSBezierPath);
-                    let border_path: id = msg_send![border_path_cls, bezierPathWithRect: mag_rect];
-                    let _: () = msg_send![border_path, setLineWidth: 3.0];
-                    let _: () = msg_send![border_path, stroke];
+                    let path_cls = class!(NSBezierPath);
 
-                    // Draw the magnified image
+                    // Create circular clipping path for magnifier
+                    let circular_clip: id = msg_send![path_cls, bezierPathWithOvalInRect: mag_rect];
+                    
+                    // Save graphics state before clipping
+                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+                    
+                    // Disable image interpolation to get sharp pixels without antialiasing.
+                    // By default, macOS applies bilinear/bicubic interpolation when scaling images,
+                    // which creates smooth gradients between pixels. For a color picker, we need
+                    // each grid square to show the exact color of a single screen pixel, not a
+                    // blended average of neighboring pixels.
+                    let graphics_context: id = msg_send![class!(NSGraphicsContext), currentContext];
+                    let _: () = msg_send![graphics_context, setImageInterpolation: 1u64]; // NSImageInterpolationNone = 1
+                    
+                    let _: () = msg_send![circular_clip, addClip];
+
+                    // Draw the magnified image (clipped to circle)
                     let from_rect = NSRect::new(
                         NSPoint::new(0.0, 0.0),
                         size
                     );
                     let _: () = msg_send![ns_image, drawInRect:mag_rect
                                           fromRect:from_rect
-                                          operation:2u64  // NSCompositingOperationSourceOver
+                                          operation:2u64
                                           fraction:1.0];
 
-                    // Draw pixel grid (20x20 pixels captured, each pixel is 5x5 in the magnifier)
-                    let pixel_size = mag_size / 20.0; // 100 / 20 = 5
+                    // Restore graphics state (remove circular clipping)
+                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+
+                    // Draw white circle outline for reticle at center
+                    let pixel_size = mag_size / CAPTURED_PIXELS;
                     let center_x = mag_x + mag_size / 2.0;
                     let center_y = mag_y + mag_size / 2.0;
                     let reticle_radius = pixel_size * 0.8;
-
-                    // Save graphics state
-                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
-
-                    // Create a clipping path that excludes the reticle area
-                    let path_cls = class!(NSBezierPath);
-
-                    // Create outer rect
-                    let clip_path: id = msg_send![path_cls, bezierPathWithRect: mag_rect];
-
-                    // Create inner circle - ensure the rect is perfectly square for a perfect circle
-                    let center_point = NSPoint::new(center_x, center_y);
-                    let pi = std::f64::consts::PI;
-
-                    // Create a perfectly square rect for the circle
                     let diameter = reticle_radius * 2.0;
                     let circle_rect = NSRect::new(
                         NSPoint::new(center_x - reticle_radius, center_y - reticle_radius),
                         cocoa::foundation::NSSize::new(diameter, diameter)
                     );
-                    let circle_path: id = msg_send![path_cls, bezierPathWithOvalInRect: circle_rect];
-
-                    // Append circle as a hole
-                    let _: () = msg_send![clip_path, appendBezierPath: circle_path];
-                    let _: () = msg_send![clip_path, setWindingRule: 1]; // NSEvenOddWindingRule
-                    let _: () = msg_send![clip_path, addClip];
-
-                    let grid_color: id = msg_send![cls, colorWithCalibratedWhite:1.0 alpha:0.3];
-                    let _: () = msg_send![grid_color, setStroke];
-
-                    // Restore graphics state (remove clipping)
-                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
-
-                    // Draw white circle outline for reticle - use the same square rect
                     let white_color: id = msg_send![cls, whiteColor];
                     let _: () = msg_send![white_color, setStroke];
-
                     let reticle_path: id = msg_send![path_cls, bezierPathWithOvalInRect: circle_rect];
                     let _: () = msg_send![reticle_path, setLineWidth: 2.0];
                     let _: () = msg_send![reticle_path, stroke];
+
+                    // Draw circular border around magnifier with current pixel color
+                    // Parse hex color to get RGB values
+                    let hex = &info.hex_color[1..]; // Skip the '#'
+                    let r_val = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0;
+                    let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
+                    let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
+                    
+                    // Draw thick colored border
+                    let border_color: id = msg_send![cls, colorWithCalibratedRed:r_val green:g_val blue:b_val alpha:1.0];
+                    let _: () = msg_send![border_color, setStroke];
+                    let border_path: id = msg_send![path_cls, bezierPathWithOvalInRect: mag_rect];
+                    let _: () = msg_send![border_path, setLineWidth: BORDER_WIDTH];
+                    let _: () = msg_send![border_path, stroke];
+
+                    // Draw hex color text along the circular border
+                    let font_cls = class!(NSFont);
+                    // Use heavy weight font for thicker text
+                    let font_manager: id = msg_send![class!(NSFontManager), sharedFontManager];
+                    let base_font: id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE];
+                    let family_name: id = msg_send![base_font, familyName];
+                    // Weight 15 is the maximum (ultra black), 9 is bold, 12+ is heavy/black
+                    let font: id = msg_send![font_manager, fontWithFamily: family_name
+                                             traits: 0u64
+                                             weight: 15i64
+                                             size: HEX_FONT_SIZE];
+                    
+                    // Calculate contrasting text color (black or white based on luminance)
+                    let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
+                    let text_color: id = if luminance > 0.5 {
+                        msg_send![cls, blackColor]
+                    } else {
+                        msg_send![cls, whiteColor]
+                    };
+
+                    // Create attributes dictionary for the text
+                    let dict_cls = class!(NSDictionary);
+                    let ns_string_cls = class!(NSString);
+                    let font_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSFont".as_ptr()];
+                    let color_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSForegroundColor".as_ptr()];
+                    let keys: Vec<id> = vec![font_attr_name, color_attr_name];
+                    let values: Vec<id> = vec![font, text_color];
+                    let attributes: id = msg_send![dict_cls, dictionaryWithObjects:values.as_ptr() forKeys:keys.as_ptr() count:2usize];
+
+                    // Draw each character of the hex color along the arc
+                    let hex_text = &info.hex_color;
+                    let char_count = hex_text.len() as f64;
+                    // The border is drawn on mag_rect (radius = mag_size/2) with stroke width border_width.
+                    // The stroke extends half inside and half outside, so the center of the border
+                    // is exactly at mag_size/2 from the center.
+                    let radius = mag_size / 2.0;
+                    
+                    // Arc spans at top of circle (90 degrees), text readable normally
+                    // Tighter angle span for letters closer together
+                    let arc_span_degrees: f64 = 70.0;
+                    let start_angle: f64 = ((90.0_f64 + arc_span_degrees / 2.0) as f64).to_radians();
+                    let end_angle: f64 = ((90.0_f64 - arc_span_degrees / 2.0) as f64).to_radians();
+                    let angle_span = end_angle - start_angle;
+                    let angle_step = angle_span / (char_count + 1.0);
+
+                    // Save graphics state
+                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+
+                    for (i, c) in hex_text.chars().enumerate() {
+                        let angle = start_angle + angle_step * (i as f64 + 1.0);
+                        
+                        // Calculate position on the arc
+                        let char_x = center_x + radius * angle.cos();
+                        let char_y = center_y + radius * angle.sin();
+
+                        // Create NSString for the character
+                        let char_str = c.to_string();
+                        let ns_char = NSString::alloc(nil);
+                        let ns_char = NSString::init_str(ns_char, &char_str);
+
+                        // Get character size for centering
+                        let char_size: cocoa::foundation::NSSize = msg_send![ns_char, sizeWithAttributes: attributes];
+
+                        // Save state for rotation
+                        let transform_cls = class!(NSAffineTransform);
+                        let transform: id = msg_send![transform_cls, transform];
+                        
+                        // Translate to character position
+                        let _: () = msg_send![transform, translateXBy:char_x yBy:char_y];
+                        
+                        // Rotate to follow the arc - text readable from outside
+                        // At top of circle (90°), we want text upright, so rotate by angle - 90°
+                        let rotation_angle = angle - std::f64::consts::PI / 2.0;
+                        let _: () = msg_send![transform, rotateByRadians:rotation_angle];
+                        
+                        // Apply transform
+                        let _: () = msg_send![transform, concat];
+
+                        // Draw character centered at origin (which is now at the arc position)
+                        let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
+                        let _: () = msg_send![ns_char, drawAtPoint:draw_point withAttributes:attributes];
+
+                        // Reset transform for next character
+                        let inverse: id = msg_send![transform, copy];
+                        let _: () = msg_send![inverse, invert];
+                        let _: () = msg_send![inverse, concat];
+                    }
+
+                    // Restore graphics state
+                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+
                 }
-
-                // Set up font
-                let font_cls = class!(NSFont);
-                let font: id = msg_send![font_cls, boldSystemFontOfSize: 18.0];
-
-                // Create NSString from the hex color
-                let ns_str = NSString::alloc(nil);
-                let ns_str = NSString::init_str(ns_str, &info.hex_color);
-
-                // Calculate text size for background
-                let white_color: id = msg_send![cls, whiteColor];
-
-                // Create attributes dictionary
-                let dict_cls = class!(NSDictionary);
-                let ns_string_cls = class!(NSString);
-
-                // Get the proper attribute key names from NSAttributedString
-                let font_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSFont".as_ptr()];
-                let color_attr_name: id = msg_send![ns_string_cls, stringWithUTF8String: "NSForegroundColor".as_ptr()];
-
-                let keys: Vec<id> = vec![font_attr_name, color_attr_name];
-                let values: Vec<id> = vec![font, white_color];
-
-                let attributes: id = msg_send![dict_cls, dictionaryWithObjects:values.as_ptr() forKeys:keys.as_ptr() count:2usize];
-
-                // Calculate text position (to the right of the cursor)
-                let text_x = info.x + 20.0;
-                let text_y = info.y - 8.0;
-                let text_point = NSPoint::new(text_x, text_y);
-
-                // Draw background rectangle for better visibility
-                let text_size: cocoa::foundation::NSSize = msg_send![ns_str, sizeWithAttributes: attributes];
-                let padding = 8.0;
-                let bg_rect = NSRect::new(
-                    NSPoint::new(text_x - padding, text_y - padding / 2.0),
-                    cocoa::foundation::NSSize::new(text_size.width + padding * 2.0, text_size.height + padding)
-                );
-
-                // Draw black background with full opacity
-                let bg_color: id = msg_send![cls, whiteColor];
-                let _: () = msg_send![bg_color, setFill];
-                cocoa::appkit::NSRectFill(bg_rect);
-
-                // Draw the text
-                let _: () = msg_send![ns_str, drawAtPoint:text_point withAttributes:attributes];
             }
         }
     }
 }
-
