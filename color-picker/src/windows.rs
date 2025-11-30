@@ -9,7 +9,11 @@
 //! - SetLayeredWindowAttributes for transparency
 
 /// Runs the color picker application on Windows
-pub fn run() {
+/// 
+/// # Returns
+/// * `Some((r, g, b))` - The selected RGB color if user clicked or pressed Enter
+/// * `None` - If user pressed ESC to cancel
+pub fn run() -> Option<(u8, u8, u8)> {
     eprintln!("Windows support is not yet implemented.");
-    std::process::exit(1);
+    None
 }

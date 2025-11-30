@@ -48,12 +48,18 @@ static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 /// Global mutex-protected state for current zoom level
 static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
 
+/// Stores the final selected color (if user clicked or pressed Enter)
+static SELECTED_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
+
 /// Information about the current mouse position and color
 struct MouseColorInfo {
     x: f64,
     y: f64,
     screen_x: f64,
     screen_y: f64,
+    r: u8,
+    g: u8,
+    b: u8,
     hex_color: String,
     scale_factor: f64,
 }
@@ -111,7 +117,16 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
 // =============================================================================
 
 /// Runs the color picker application on macOS
-pub fn run() {
+/// 
+/// # Returns
+/// * `Some((r, g, b))` - The selected RGB color if user clicked or pressed Enter
+/// * `None` - If user pressed ESC to cancel
+pub fn run() -> Option<(u8, u8, u8)> {
+    // Reset selected color
+    if let Ok(mut color) = SELECTED_COLOR.lock() {
+        *color = None;
+    }
+    
     unsafe {
         let _pool = NSAutoreleasePool::new(nil);
 
@@ -164,6 +179,13 @@ pub fn run() {
         let _: () = msg_send![class!(NSCursor), hide];
 
         app.run();
+    }
+    
+    // Return the selected color (if any)
+    if let Ok(color) = SELECTED_COLOR.lock() {
+        color.clone()
+    } else {
+        None
     }
 }
 
@@ -233,9 +255,32 @@ extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool {
 
 extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
     unsafe {
+        // Save the current color before exiting
+        if let Ok(state) = MOUSE_STATE.lock() {
+            if let Some(ref info) = *state {
+                if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                    *selected = Some((info.r, info.g, info.b));
+                }
+            }
+        }
+        
         let _: () = msg_send![class!(NSCursor), unhide];
         let app = NSApp();
-        let _: () = msg_send![app, terminate:nil];
+        let _: () = msg_send![app, stop:nil];
+        
+        // Post a dummy event to ensure the run loop exits
+        let dummy_event: id = msg_send![class!(NSEvent), 
+            otherEventWithType:15u64  // NSEventTypeApplicationDefined
+            location:NSPoint::new(0.0, 0.0)
+            modifierFlags:0u64
+            timestamp:0.0f64
+            windowNumber:0i64
+            context:nil
+            subtype:0i16
+            data1:0i64
+            data2:0i64
+        ];
+        let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
     }
 }
 
@@ -261,16 +306,13 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
                     y: location.y,
                     screen_x: screen_location.x,
                     screen_y: screen_location.y,
+                    r: r_int,
+                    g: g_int,
+                    b: b_int,
                     hex_color: hex_color.clone(),
                     scale_factor,
                 });
             }
-
-            print!("\r\x1B[K");
-            print!("RGB: ({:3}, {:3}, {:3})  |  HEX: {}  ", r_int, g_int, b_int, hex_color);
-
-            use std::io::{self, Write};
-            io::stdout().flush().unwrap();
 
             let _: () = msg_send![_this, setNeedsDisplay: YES];
         }
@@ -300,10 +342,56 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
         let shift_pressed = (modifier_flags & (1 << 17)) != 0;
         let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
 
+        // ESC (key code 53) - cancel without saving
         if key_code == 53 {
+            // Don't save color - leave SELECTED_COLOR as None
             let _: () = msg_send![class!(NSCursor), unhide];
             let app = NSApp();
-            let _: () = msg_send![app, terminate:nil];
+            let _: () = msg_send![app, stop:nil];
+            
+            // Post a dummy event to ensure the run loop exits
+            let dummy_event: id = msg_send![class!(NSEvent), 
+                otherEventWithType:15u64
+                location:NSPoint::new(0.0, 0.0)
+                modifierFlags:0u64
+                timestamp:0.0f64
+                windowNumber:0i64
+                context:nil
+                subtype:0i16
+                data1:0i64
+                data2:0i64
+            ];
+            let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
+            return;
+        }
+        
+        // Enter/Return (key code 36) - save and exit
+        if key_code == 36 {
+            // Save the current color before exiting
+            if let Ok(state) = MOUSE_STATE.lock() {
+                if let Some(ref info) = *state {
+                    if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                        *selected = Some((info.r, info.g, info.b));
+                    }
+                }
+            }
+            let _: () = msg_send![class!(NSCursor), unhide];
+            let app = NSApp();
+            let _: () = msg_send![app, stop:nil];
+            
+            // Post a dummy event to ensure the run loop exits
+            let dummy_event: id = msg_send![class!(NSEvent), 
+                otherEventWithType:15u64
+                location:NSPoint::new(0.0, 0.0)
+                modifierFlags:0u64
+                timestamp:0.0f64
+                windowNumber:0i64
+                context:nil
+                subtype:0i16
+                data1:0i64
+                data2:0i64
+            ];
+            let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
             return;
         }
 
@@ -364,15 +452,13 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                         y: window_point.y,
                         screen_x: new_x,
                         screen_y: cocoa_y,
+                        r: r_int,
+                        g: g_int,
+                        b: b_int,
                         hex_color: hex_color.clone(),
                         scale_factor,
                     });
                 }
-
-                print!("\r\x1B[K");
-                print!("RGB: ({:3}, {:3}, {:3})  |  HEX: {}  ", r_int, g_int, b_int, hex_color);
-                use std::io::{self, Write};
-                io::stdout().flush().unwrap();
 
                 let _: () = msg_send![_this, setNeedsDisplay: YES];
             }

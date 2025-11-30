@@ -19,7 +19,6 @@
 //! - Shift + Arrow keys: Fast movement (50 pixels)
 //! - Scroll wheel: Zoom in/out
 
-
 mod config;
 
 #[cfg(target_os = "macos")]
@@ -32,24 +31,35 @@ mod windows;
 mod linux;
 
 fn main() {
+    let selected_color: Option<(u8, u8, u8)>;
+    
     #[cfg(target_os = "macos")]
     {
-        macos::run();
+        selected_color = macos::run();
     }
 
     #[cfg(target_os = "windows")]
     {
-        windows::run();
+        selected_color = windows::run();
     }
 
     #[cfg(target_os = "linux")]
     {
-        linux::run();
+        selected_color = linux::run();
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         eprintln!("Unsupported platform");
         std::process::exit(1);
+    }
+    
+    // Display the result
+    match selected_color {
+        Some((r, g, b)) => {
+            let hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
+            println!("RGB: ({}, {}, {})  |  HEX: {}", r, g, b, hex);
+        }
+        None => std::process::exit(1),
     }
 }
