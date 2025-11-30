@@ -76,10 +76,15 @@ fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
     let screen_height = main_display.pixels_high() as f64;
     let cg_y = screen_height - y;
 
-    let half_size = size / 2.0;
+    // Round the center position and size to align with pixel boundaries
+    let center_x = x.round();
+    let center_y = cg_y.round();
+    let capture_size = size.round();
+    let half_size = (capture_size / 2.0).floor();
+    
     let rect = CGRect::new(
-        &CGPointStruct::new(x - half_size, cg_y - half_size),
-        &CGSize::new(size, size)
+        &CGPointStruct::new(center_x - half_size, center_y - half_size),
+        &CGSize::new(capture_size, capture_size)
     );
 
     main_display.image_for_rect(rect)
@@ -93,8 +98,12 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
     let screen_height = main_display.pixels_high() as f64;
     let cg_y = screen_height - y;
 
+    // Use same rounding as capture_zoom_area
+    let center_x = x.round();
+    let center_y = cg_y.round();
+
     let rect = CGRect::new(
-        &CGPointStruct::new(x, cg_y),
+        &CGPointStruct::new(center_x, center_y),
         &CGSize::new(1.0, 1.0)
     );
 
@@ -490,11 +499,10 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
 
                 let mag_size = CAPTURED_PIXELS * current_zoom;
                 
-                // On Retina, capture fewer points to get the same number of physical pixels
-                let extra_margin = if info.scale_factor > 1.0 { 1.0 } else { 0.0 };
-                let capture_points = (CAPTURED_PIXELS + extra_margin) / info.scale_factor;
+                // On Retina, divide by scale_factor to capture the same number of physical pixels
+                let capture_size = CAPTURED_PIXELS / info.scale_factor;
 
-                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_points) {
+                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_size) {
                     let ns_image_cls = class!(NSImage);
                     let ns_image: id = msg_send![ns_image_cls, alloc];
 
@@ -529,11 +537,10 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
 
                     let _: () = msg_send![circular_clip, addClip];
 
-                    // On Retina, offset the source rectangle by 0.5 pixel to align center
-                    let source_offset = if info.scale_factor > 1.0 { 0.5 } else { 0.0 };
+                    // Source rectangle - use entire captured image
                     let from_rect = NSRect::new(
-                        NSPoint::new(source_offset, source_offset),
-                        cocoa::foundation::NSSize::new(size.width - source_offset, size.height - source_offset)
+                        NSPoint::new(0.0, 0.0),
+                        size
                     );
 
                     let _: () = msg_send![ns_image, drawInRect:mag_rect
