@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+
+
+# macOS dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
 # Cocoa framework bindings for macOS GUI
 # Provides NSApplication, NSWindow, NSView, etc.
 cocoa = "0.26"
@@ -15,3 +19,8 @@ objc = "0.2"
 # Core Graphics bindings for screen capture
 # Provides CGDisplay, CGImage for capturing screen pixels
 core-graphics = "0.23"
+
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSGeometry", "NSString", "NSThread"] }
+objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSScreen", "NSEvent", "NSView", "NSResponder", "NSGraphicsContext", "NSColor", "NSApplication", "NSRunningApplication", "NSImage", "NSBezierPath", "NSAffineTransform", "NSCursor"] }
+

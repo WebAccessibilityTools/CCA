@@ -34,6 +34,12 @@ use objc::{class, msg_send, sel, sel_impl};  // Macros for Objective-C calls
 use objc::declare::ClassDecl;                 // For creating custom Objective-C classes
 use objc::runtime::{Object, Sel};             // Runtime types for method dispatch
 
+// objc2 imports for modern Objective-C bindings
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
+use objc2_foundation::NSPoint as NSPoint2;
+use objc2_app_kit::{NSEvent, NSScreen as NSScreen2, NSView, NSWindow as NSWindow2};
+
 // Core Graphics for screen capture and pixel color extraction
 use core_graphics::display::CGDisplay;  // Display/screen functions
 use core_graphics::image::CGImage;      // Image type for screen captures
@@ -421,36 +427,37 @@ extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
     }
 }
 
-/// Implementation of mouseMoved: - handles mouse movement events
-/// Updates the current color and requests a redraw of the magnifier
 extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
-    unsafe {
-        // Get mouse location in window coordinates
-        let location: NSPoint = msg_send![event, locationInWindow];
-        
-        // Get the window containing this view
-        let window: id = msg_send![_this, window];
-        
+    // Convert legacy id to objc2 reference
+    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
+    
+    // Get mouse location in window coordinates using objc2
+    let location: NSPoint2 = unsafe { event_ref.locationInWindow() };
+    
+    // Get the window from the view using objc2
+    let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+    let window_opt: Option<Retained<NSWindow2>> = unsafe { view_ref.window() };
+    
+    if let Some(window) = window_opt {
         // Convert window coordinates to screen coordinates
-        let screen_location: NSPoint = msg_send![window, convertPointToScreen: location];
-
+        let screen_location: NSPoint2 = unsafe { window.convertPointToScreen(location) };
+        
         // Get the color of the pixel at the cursor position
-        if let Some((r, g, b)) = get_pixel_color(screen_location.x as f64, screen_location.y as f64) {
-            // Convert from 0.0-1.0 range to 0-255 integer range
+        if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
             let r_int = (r * 255.0) as u8;
             let g_int = (g * 255.0) as u8;
             let b_int = (b * 255.0) as u8;
 
-            // Format as hex color string
             let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
 
-            // Update the global mouse state with new position and color
             if let Ok(mut state) = MOUSE_STATE.lock() {
-                // Get the screen's backing scale factor (1.0 or 2.0 for Retina)
-                let screen: id = msg_send![window, screen];
-                let scale_factor: f64 = msg_send![screen, backingScaleFactor];
-
-                // Store all the information in the global state
+                // Get scale factor using objc2
+                let scale_factor: f64 = if let Some(screen) = unsafe { window.screen() } {
+                    unsafe { screen.backingScaleFactor() }
+                } else {
+                    1.0
+                };
+                
                 *state = Some(MouseColorInfo {
                     x: location.x,
                     y: location.y,
@@ -464,8 +471,10 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
                 });
             }
 
-            // Request a redraw of the view to update the magnifier display
-            let _: () = msg_send![_this, setNeedsDisplay: YES];
+            // Request redraw using legacy API (view is still legacy)
+            unsafe {
+                let _: () = msg_send![_this, setNeedsDisplay: YES];
+            }
         }
     }
 }
@@ -473,21 +482,20 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
 /// Implementation of scrollWheel: - handles scroll wheel events
 /// Adjusts the zoom level of the magnifier
 extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: id) {
-    unsafe {
-        // Get the vertical scroll delta
-        let delta_y: f64 = msg_send![event, deltaY];
+    // Convert legacy id to objc2 reference
+    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
+    
+    // Get the vertical scroll delta using objc2
+    let delta_y: f64 = unsafe { event_ref.deltaY() };
 
-        // Only process if there's actual scroll movement
-        if delta_y != 0.0 {
-            // Lock the zoom mutex and update the zoom level
-            if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
-                // Calculate new zoom with the scroll delta
-                let new_zoom = *zoom + delta_y * ZOOM_STEP;
-                // Clamp to valid range
-                *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-            }
+    if delta_y != 0.0 {
+        if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+            let new_zoom = *zoom + delta_y * ZOOM_STEP;
+            *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+        }
 
-            // Request a redraw to show the new zoom level
+        // Request redraw using legacy API
+        unsafe {
             let _: () = msg_send![_this, setNeedsDisplay: YES];
         }
     }
