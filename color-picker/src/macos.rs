@@ -31,16 +31,20 @@ use objc::runtime::{Object, Sel};             // Runtime types for method dispat
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{ClassType, msg_send_id};
-use objc2_foundation::{CGFloat, CGPoint, MainThreadMarker, NSPoint as NSPoint2, NSRect as NSRect2, NSSize as NSSize2};
+use objc2_foundation::{CGFloat, CGPoint, MainThreadMarker, NSAffineTransform, NSCopying, NSPoint as NSPoint2, NSRect as NSRect2, NSSize as NSSize2, NSString as NSString2};
 use objc2_app_kit::{
+    NSAffineTransformNSAppKitAdditions,
     NSApp,
     NSApplication, 
     NSApplicationActivationOptions,
     NSApplicationActivationPolicy,
+    NSBezierPath,
     NSColor,
     NSCursor,
     NSEvent,
     NSEventModifierFlags,
+    NSGraphicsContext,
+    NSImage,
     NSRunningApplication,
     NSScreen as NSScreen2, 
     NSView, 
@@ -518,43 +522,46 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
 // =============================================================================
 
 extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
-    unsafe {
-        let cls = class!(NSColor);
+    // Draw faint overlay
+    let overlay_color = unsafe { 
+        NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) 
+    };
+    unsafe { overlay_color.set() };
+    
+    let bounds: NSRect = unsafe { msg_send![_this, bounds] };
+    unsafe { cocoa::appkit::NSRectFill(bounds) };
 
-        let color: id = msg_send![cls, colorWithCalibratedWhite:0.0 alpha:0.05];
-        let _: () = msg_send![color, set];
-        let bounds: NSRect = msg_send![_this, bounds];
-        cocoa::appkit::NSRectFill(bounds);
+    if let Ok(state) = MOUSE_STATE.lock() {
+        if let Some(ref info) = *state {
+            let current_zoom = match CURRENT_ZOOM.lock() {
+                Ok(z) => *z,
+                Err(_) => INITIAL_ZOOM_FACTOR,
+            };
 
-        if let Ok(state) = MOUSE_STATE.lock() {
-            if let Some(ref info) = *state {
-                let current_zoom = match CURRENT_ZOOM.lock() {
-                    Ok(z) => *z,
-                    Err(_) => INITIAL_ZOOM_FACTOR,
+            let mag_size = CAPTURED_PIXELS * current_zoom;
+            let capture_size = CAPTURED_PIXELS / info.scale_factor;
+
+            if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_size) {
+                let img_width = cg_image.width() as f64;
+                let img_height = cg_image.height() as f64;
+                let target_pixels = CAPTURED_PIXELS;
+                
+                let crop_x = if img_width > target_pixels {
+                    ((img_width - target_pixels) / 2.0).floor()
+                } else {
+                    0.0
                 };
-
-                let mag_size = CAPTURED_PIXELS * current_zoom;
-                let capture_size = CAPTURED_PIXELS / info.scale_factor;
-
-                if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_size) {
-                    let img_width = cg_image.width() as f64;
-                    let img_height = cg_image.height() as f64;
-                    let target_pixels = CAPTURED_PIXELS;
-                    
-                    let crop_x = if img_width > target_pixels {
-                        ((img_width - target_pixels) / 2.0).floor()
-                    } else {
-                        0.0
-                    };
-                    let crop_y = if img_height > target_pixels {
-                        ((img_height - target_pixels) / 2.0).floor()
-                    } else {
-                        0.0
-                    };
-                    
-                    let use_width = if img_width > target_pixels { target_pixels } else { img_width };
-                    let use_height = if img_height > target_pixels { target_pixels } else { img_height };
-                    
+                let crop_y = if img_height > target_pixels {
+                    ((img_height - target_pixels) / 2.0).floor()
+                } else {
+                    0.0
+                };
+                
+                let use_width = if img_width > target_pixels { target_pixels } else { img_width };
+                let use_height = if img_height > target_pixels { target_pixels } else { img_height };
+                
+                // Create NSImage from CGImage (still needs legacy for CGImage conversion)
+                unsafe {
                     let ns_image_cls = class!(NSImage);
                     let ns_image: id = msg_send![ns_image_cls, alloc];
 
@@ -575,15 +582,21 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         cocoa::foundation::NSSize::new(mag_size, mag_size)
                     );
 
-                    let path_cls = class!(NSBezierPath);
-                    let circular_clip: id = msg_send![path_cls, bezierPathWithOvalInRect: mag_rect];
+                    // Create circular clip using objc2
+                    let mag_rect2 = NSRect2::new(
+                        NSPoint2::new(mag_x, mag_y),
+                        NSSize2::new(mag_size, mag_size)
+                    );
+                    let circular_clip = NSBezierPath::bezierPathWithOvalInRect(mag_rect2);
 
+                    // Save graphics state (use legacy - objc2 method is instance method)
                     let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
 
-                    let graphics_context: id = msg_send![class!(NSGraphicsContext), currentContext];
-                    let _: () = msg_send![graphics_context, setImageInterpolation: 1u64];
+                    if let Some(graphics_context) = NSGraphicsContext::currentContext() {
+                        graphics_context.setImageInterpolation(objc2_app_kit::NSImageInterpolation::None);
+                    }
 
-                    let _: () = msg_send![circular_clip, addClip];
+                    circular_clip.addClip();
 
                     let from_rect = NSRect::new(
                         NSPoint::new(crop_x, crop_y),
@@ -595,8 +608,10 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                                           operation:2u64
                                           fraction:1.0];
 
+                    // Restore graphics state
                     let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
 
+                    // Draw reticle
                     let actual_pixels = use_width;
                     let pixel_size = mag_size / actual_pixels;
                     
@@ -612,44 +627,47 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     let reticle_center_y = center_y + offset;
 
                     let half_pixel = pixel_size / 2.0;
-                    let square_rect = NSRect::new(
-                        NSPoint::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
-                        cocoa::foundation::NSSize::new(pixel_size, pixel_size)
+                    let square_rect2 = NSRect2::new(
+                        NSPoint2::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
+                        NSSize2::new(pixel_size, pixel_size)
                     );
 
-                    let gray_color: id = msg_send![cls, colorWithCalibratedRed: 0.5f64 green: 0.5f64 blue: 0.5f64 alpha: 1.0f64];
-                    let _: () = msg_send![gray_color, setStroke];
+                    // Gray reticle color using objc2
+                    let gray_color = NSColor::colorWithCalibratedRed_green_blue_alpha(0.5, 0.5, 0.5, 1.0);
+                    gray_color.setStroke();
 
-                    let reticle_path: id = msg_send![path_cls, bezierPathWithRect: square_rect];
-                    let _: () = msg_send![reticle_path, setLineWidth: 1.0];
-                    let _: () = msg_send![reticle_path, stroke];
+                    let reticle_path = NSBezierPath::bezierPathWithRect(square_rect2);
+                    reticle_path.setLineWidth(1.0);
+                    reticle_path.stroke();
 
+                    // Draw border
                     let hex = &info.hex_color[1..];
                     let r_val = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0;
                     let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
                     let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
 
-                    let border_rect = NSRect::new(
-                        NSPoint::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
-                        cocoa::foundation::NSSize::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
+                    let border_rect2 = NSRect2::new(
+                        NSPoint2::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
+                        NSSize2::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
                     );
 
-                    let border_color: id = msg_send![cls, colorWithCalibratedRed:r_val green:g_val blue:b_val alpha:1.0];
-                    let _: () = msg_send![border_color, setStroke];
+                    let border_color = NSColor::colorWithCalibratedRed_green_blue_alpha(r_val, g_val, b_val, 1.0);
+                    border_color.setStroke();
 
-                    let border_path: id = msg_send![path_cls, bezierPathWithOvalInRect: border_rect];
-                    let _: () = msg_send![border_path, setLineWidth: BORDER_WIDTH];
-                    let _: () = msg_send![border_path, stroke];
+                    let border_path = NSBezierPath::bezierPathWithOvalInRect(border_rect2);
+                    border_path.setLineWidth(BORDER_WIDTH);
+                    border_path.stroke();
 
+                    // Draw hex text (still using legacy for text rendering complexity)
                     let font_cls = class!(NSFont);
                     let font: id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE weight: 0.62f64];
 
                     let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
 
                     let text_color: id = if luminance > 0.5 {
-                        msg_send![cls, colorWithCalibratedRed: 0.0f64 green: 0.0f64 blue: 0.0f64 alpha: 1.0f64]
+                        msg_send![class!(NSColor), colorWithCalibratedRed: 0.0f64 green: 0.0f64 blue: 0.0f64 alpha: 1.0f64]
                     } else {
-                        msg_send![cls, colorWithCalibratedRed: 1.0f64 green: 1.0f64 blue: 1.0f64 alpha: 1.0f64]
+                        msg_send![class!(NSColor), colorWithCalibratedRed: 1.0f64 green: 1.0f64 blue: 1.0f64 alpha: 1.0f64]
                     };
 
                     let hex_text = &info.hex_color;
@@ -685,22 +703,22 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
 
                         let char_size: cocoa::foundation::NSSize = msg_send![ns_char, sizeWithAttributes: attributes];
 
-                        let transform_cls = class!(NSAffineTransform);
-                        let transform: id = msg_send![transform_cls, transform];
-
-                        let _: () = msg_send![transform, translateXBy:char_x yBy:char_y];
+                        // Use objc2 for NSAffineTransform
+                        let transform = NSAffineTransform::transform();
+                        transform.translateXBy_yBy(char_x, char_y);
 
                         let rotation_angle = angle - std::f64::consts::PI / 2.0;
-                        let _: () = msg_send![transform, rotateByRadians:rotation_angle];
+                        transform.rotateByRadians(rotation_angle);
 
-                        let _: () = msg_send![transform, concat];
+                        transform.concat();
 
                         let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
                         let _: () = msg_send![ns_char, drawAtPoint:draw_point withAttributes:attributes];
 
-                        let inverse: id = msg_send![transform, copy];
-                        let _: () = msg_send![inverse, invert];
-                        let _: () = msg_send![inverse, concat];
+                        // Invert transform
+                        let inverse = transform.copy();
+                        inverse.invert();
+                        inverse.concat();
                     }
 
                     let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
