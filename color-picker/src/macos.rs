@@ -4,15 +4,13 @@
 //! It creates a fullscreen overlay window that captures the screen and displays
 //! a magnified view of the pixels around the cursor.
 
-
 // =============================================================================
 // IMPORTS
 // =============================================================================
 
-// Cocoa framework bindings for macOS GUI (legacy, being migrated to objc2)
+// Cocoa framework bindings for macOS GUI (minimal legacy usage)
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSRect, NSPoint, NSString};
-use cocoa::appkit::NSWindowStyleMask;
+use cocoa::foundation::{NSRect as NSRectLegacy, NSString as NSStringLegacy};
 
 // Objective-C runtime bindings for low-level messaging (legacy)
 use objc::{class, msg_send, sel, sel_impl};
@@ -21,7 +19,7 @@ use objc::runtime::{Object, Sel};
 
 // objc2 imports for modern Objective-C bindings
 use objc2::rc::Retained;
-use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint as NSPoint2, NSRect as NSRect2, NSSize as NSSize2};
+use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, NSRect, NSSize};
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
     NSApplication, 
@@ -36,6 +34,7 @@ use objc2_app_kit::{
     NSRunningApplication,
     NSView, 
     NSWindow as NSWindow2,
+    NSWindowStyleMask,
 };
 
 // Core Graphics for screen capture and pixel color extraction
@@ -165,7 +164,7 @@ pub fn run() -> Option<(u8, u8, u8)> {
             let window_alloc: id = msg_send![window_class, alloc];
             let window: id = msg_send![window_alloc,
                 initWithContentRect: frame
-                styleMask: NSWindowStyleMask::NSBorderlessWindowMask
+                styleMask: NSWindowStyleMask::Borderless
                 backing: 2u64  // NSBackingStoreBuffered = 2
                 defer: NO
             ];
@@ -233,7 +232,7 @@ fn register_view_class() -> &'static objc::runtime::Class {
         decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
         decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, id));
         decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, id));
-        decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRect));
+        decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRectLegacy));
     }
 
     decl.register()
@@ -305,7 +304,7 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
     let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
     
     // Get mouse location in window coordinates using objc2
-    let location: NSPoint2 = unsafe { event_ref.locationInWindow() };
+    let location: NSPoint = unsafe { event_ref.locationInWindow() };
     
     // Get the window from the view using objc2
     let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
@@ -313,7 +312,7 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
     
     if let Some(window) = window_opt {
         // Convert window coordinates to screen coordinates
-        let screen_location: NSPoint2 = unsafe { window.convertPointToScreen(location) };
+        let screen_location: NSPoint = unsafe { window.convertPointToScreen(location) };
         
         // Get the color of the pixel at the cursor position
         if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
@@ -484,14 +483,14 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
 // DRAWING
 // =============================================================================
 
-extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
+extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
     // Draw faint overlay
     let overlay_color = unsafe { 
         NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) 
     };
     unsafe { overlay_color.set() };
     
-    let bounds: NSRect = unsafe { msg_send![_this, bounds] };
+    let bounds: NSRectLegacy = unsafe { msg_send![_this, bounds] };
     unsafe { cocoa::appkit::NSRectFill(bounds) };
 
     if let Ok(state) = MOUSE_STATE.lock() {
@@ -533,22 +532,22 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         *ptr_addr
                     };
 
-                    let full_size = cocoa::foundation::NSSize::new(img_width, img_height);
+                    let full_size = NSSize::new(img_width, img_height);
                     let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:full_size];
-                    let cropped_size = cocoa::foundation::NSSize::new(use_width, use_height);
+                    let cropped_size = NSSize::new(use_width, use_height);
 
                     let mag_x = info.x - mag_size / 2.0;
                     let mag_y = info.y - mag_size / 2.0;
 
                     let mag_rect = NSRect::new(
                         NSPoint::new(mag_x, mag_y),
-                        cocoa::foundation::NSSize::new(mag_size, mag_size)
+                        NSSize::new(mag_size, mag_size)
                     );
 
                     // Create circular clip using objc2
-                    let mag_rect2 = NSRect2::new(
-                        NSPoint2::new(mag_x, mag_y),
-                        NSSize2::new(mag_size, mag_size)
+                    let mag_rect2 = NSRect::new(
+                        NSPoint::new(mag_x, mag_y),
+                        NSSize::new(mag_size, mag_size)
                     );
                     let circular_clip = NSBezierPath::bezierPathWithOvalInRect(mag_rect2);
 
@@ -590,9 +589,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     let reticle_center_y = center_y + offset;
 
                     let half_pixel = pixel_size / 2.0;
-                    let square_rect2 = NSRect2::new(
-                        NSPoint2::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
-                        NSSize2::new(pixel_size, pixel_size)
+                    let square_rect2 = NSRect::new(
+                        NSPoint::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
+                        NSSize::new(pixel_size, pixel_size)
                     );
 
                     // Gray reticle color using objc2
@@ -609,9 +608,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
                     let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
 
-                    let border_rect2 = NSRect2::new(
-                        NSPoint2::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
-                        NSSize2::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
+                    let border_rect2 = NSRect::new(
+                        NSPoint::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
+                        NSSize::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
                     );
 
                     let border_color = NSColor::colorWithCalibratedRed_green_blue_alpha(r_val, g_val, b_val, 1.0);
@@ -653,14 +652,14 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         let char_str = c.to_string();
                         
                         // Create attributes dictionary (still using legacy for complex dict creation)
-                        let ns_char_legacy = NSString::alloc(nil);
-                        let ns_char_legacy = NSString::init_str(ns_char_legacy, &char_str);
+                        let ns_char_legacy = NSStringLegacy::alloc(nil);
+                        let ns_char_legacy = NSStringLegacy::init_str(ns_char_legacy, &char_str);
 
                         let dict_cls = class!(NSDictionary);
-                        let font_attr_key = NSString::alloc(nil);
-                        let font_attr_key = NSString::init_str(font_attr_key, "NSFont");
-                        let color_attr_key = NSString::alloc(nil);
-                        let color_attr_key = NSString::init_str(color_attr_key, "NSColor");
+                        let font_attr_key = NSStringLegacy::alloc(nil);
+                        let font_attr_key = NSStringLegacy::init_str(font_attr_key, "NSFont");
+                        let color_attr_key = NSStringLegacy::alloc(nil);
+                        let color_attr_key = NSStringLegacy::init_str(color_attr_key, "NSColor");
 
                         let text_color_ptr: *const NSColor = &*text_color;
                         let keys: [id; 2] = [font_attr_key, color_attr_key];
@@ -668,7 +667,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
 
                         let attributes: id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
 
-                        let char_size: cocoa::foundation::NSSize = msg_send![ns_char_legacy, sizeWithAttributes: attributes];
+                        let char_size: NSSize = msg_send![ns_char_legacy, sizeWithAttributes: attributes];
 
                         // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
