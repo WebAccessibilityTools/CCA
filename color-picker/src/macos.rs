@@ -39,7 +39,8 @@ use objc2_app_kit::{
     NSApplicationActivationPolicy,
     NSColor,
     NSCursor,
-    NSEvent, 
+    NSEvent,
+    NSEventModifierFlags,
     NSRunningApplication,
     NSScreen as NSScreen2, 
     NSView, 
@@ -371,15 +372,20 @@ extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: id) {
 }
 
 extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
-    unsafe {
-        let key_code: u16 = msg_send![event, keyCode];
-        let modifier_flags: u64 = msg_send![event, modifierFlags];
+    // Convert legacy id to objc2 reference
+    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
+    
+    // Get key code and modifier flags using objc2
+    let key_code: u16 = unsafe { event_ref.keyCode() };
+    let modifier_flags: NSEventModifierFlags = unsafe { event_ref.modifierFlags() };
+    
+    // Check if Shift key is pressed
+    let shift_pressed = modifier_flags.contains(NSEventModifierFlags::NSEventModifierFlagShift);
+    let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
 
-        let shift_pressed = (modifier_flags & (1 << 17)) != 0;
-        let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
-
-        // ESC
-        if key_code == 53 {
+    // ESC
+    if key_code == 53 {
+        unsafe {
             NSCursor::unhide();
             let app: id = msg_send![class!(NSApplication), sharedApplication];
             let _: () = msg_send![app, stop:nil];
@@ -396,18 +402,20 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                 data2:0i64
             ];
             let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
-            return;
         }
-        
-        // Enter
-        if key_code == 36 {
-            if let Ok(state) = MOUSE_STATE.lock() {
-                if let Some(ref info) = *state {
-                    if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                        *selected = Some((info.r, info.g, info.b));
-                    }
+        return;
+    }
+    
+    // Enter
+    if key_code == 36 {
+        if let Ok(state) = MOUSE_STATE.lock() {
+            if let Some(ref info) = *state {
+                if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                    *selected = Some((info.r, info.g, info.b));
                 }
             }
+        }
+        unsafe {
             NSCursor::unhide();
             let app: id = msg_send![class!(NSApplication), sharedApplication];
             let _: () = msg_send![app, stop:nil];
@@ -424,54 +432,58 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                 data2:0i64
             ];
             let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
-            return;
         }
+        return;
+    }
 
-        let (dx, dy): (f64, f64) = match key_code {
-            123 => (-move_amount, 0.0),
-            124 => (move_amount, 0.0),
-            125 => (0.0, -move_amount),
-            126 => (0.0, move_amount),
-            _ => (0.0, 0.0),
-        };
+    // Arrow keys
+    let (dx, dy): (f64, f64) = match key_code {
+        123 => (-move_amount, 0.0),  // Left
+        124 => (move_amount, 0.0),   // Right
+        125 => (0.0, -move_amount),  // Down
+        126 => (0.0, move_amount),   // Up
+        _ => (0.0, 0.0),
+    };
 
-        if dx != 0.0 || dy != 0.0 {
-            let cg_event = core_graphics::event::CGEvent::new(
-                core_graphics::event_source::CGEventSource::new(
-                    core_graphics::event_source::CGEventSourceStateID::HIDSystemState
-                ).unwrap()
-            ).unwrap();
+    if dx != 0.0 || dy != 0.0 {
+        let cg_event = core_graphics::event::CGEvent::new(
+            core_graphics::event_source::CGEventSource::new(
+                core_graphics::event_source::CGEventSourceStateID::HIDSystemState
+            ).unwrap()
+        ).unwrap();
 
-            let current_pos = cg_event.location();
+        let current_pos = cg_event.location();
 
-            let new_x = current_pos.x + dx;
-            let new_y = current_pos.y - dy;
+        let new_x = current_pos.x + dx;
+        let new_y = current_pos.y - dy;
 
-            let new_pos = core_graphics::geometry::CGPoint::new(new_x, new_y);
+        let new_pos = core_graphics::geometry::CGPoint::new(new_x, new_y);
 
-            let move_event = core_graphics::event::CGEvent::new_mouse_event(
-                core_graphics::event_source::CGEventSource::new(
-                    core_graphics::event_source::CGEventSourceStateID::HIDSystemState
-                ).unwrap(),
-                core_graphics::event::CGEventType::MouseMoved,
-                new_pos,
-                core_graphics::event::CGMouseButton::Left,
-            ).unwrap();
+        let move_event = core_graphics::event::CGEvent::new_mouse_event(
+            core_graphics::event_source::CGEventSource::new(
+                core_graphics::event_source::CGEventSourceStateID::HIDSystemState
+            ).unwrap(),
+            core_graphics::event::CGEventType::MouseMoved,
+            new_pos,
+            core_graphics::event::CGMouseButton::Left,
+        ).unwrap();
 
-            move_event.post(core_graphics::event::CGEventTapLocation::HID);
+        move_event.post(core_graphics::event::CGEventTapLocation::HID);
 
-            let main_display = CGDisplay::main();
-            let screen_height = main_display.pixels_high() as f64;
-            let cocoa_y = screen_height - new_y;
+        let main_display = CGDisplay::main();
+        let screen_height = main_display.pixels_high() as f64;
+        let cocoa_y = screen_height - new_y;
 
-            if let Some((r, g, b)) = get_pixel_color(new_x, cocoa_y) {
-                let r_int = (r * 255.0) as u8;
-                let g_int = (g * 255.0) as u8;
-                let b_int = (b * 255.0) as u8;
+        if let Some((r, g, b)) = get_pixel_color(new_x, cocoa_y) {
+            let r_int = (r * 255.0) as u8;
+            let g_int = (g * 255.0) as u8;
+            let b_int = (b * 255.0) as u8;
 
-                let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+            let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
 
-                if let Ok(mut state) = MOUSE_STATE.lock() {
+            if let Ok(mut state) = MOUSE_STATE.lock() {
+                // Get window and screen info using legacy API (still needed for view)
+                unsafe {
                     let window: id = msg_send![_this, window];
                     let screen_point = NSPoint::new(new_x, cocoa_y);
                     let window_point: NSPoint = msg_send![window, convertPointFromScreen: screen_point];
@@ -491,7 +503,10 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                         scale_factor,
                     });
                 }
+            }
 
+            // Request redraw
+            unsafe {
                 let _: () = msg_send![_this, setNeedsDisplay: YES];
             }
         }
