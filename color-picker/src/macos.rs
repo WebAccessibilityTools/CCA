@@ -713,6 +713,23 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     // ==========================================================
                     // CREATE NSIMAGE FROM CGIMAGE
                     // ==========================================================
+                    let img_width = cg_image.width() as f64;
+                    let img_height = cg_image.height() as f64;
+                    let target_pixels = CAPTURED_PIXELS;
+                    
+                    let crop_x = if img_width > target_pixels {
+                        ((img_width - target_pixels) / 2.0).floor()
+                    } else {
+                        0.0
+                    };
+                    let crop_y = if img_height > target_pixels {
+                        ((img_height - target_pixels) / 2.0).floor()
+                    } else {
+                        0.0
+                    };
+                    
+                    let use_width = if img_width > target_pixels { target_pixels } else { img_width };
+                    let use_height = if img_height > target_pixels { target_pixels } else { img_height };
                     
                     // Allocate a new NSImage
                     let ns_image_cls = class!(NSImage);
@@ -725,13 +742,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     };
 
                     // Create NSSize with the captured image dimensions
-                    let size = cocoa::foundation::NSSize::new(
-                        cg_image.width() as f64,
-                        cg_image.height() as f64
-                    );
-
-                    // Initialize NSImage with the CGImage
-                    let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:size];
+                    let full_size = cocoa::foundation::NSSize::new(img_width, img_height);
+                    let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:full_size];
+                    let cropped_size = cocoa::foundation::NSSize::new(use_width, use_height);
 
                     // ==========================================================
                     // CALCULATE MAGNIFIER POSITION
@@ -770,8 +783,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
 
                     // Source rectangle - use entire captured image
                     let from_rect = NSRect::new(
-                        NSPoint::new(0.0, 0.0),
-                        size
+                        NSPoint::new(crop_x, crop_y),
+                        cropped_size
                     );
 
                     // Draw the magnified image
@@ -789,10 +802,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     // DRAW CENTER RETICLE (SQUARE TARGET)
                     // ==========================================================
                     
-                    // Get actual number of pixels captured for sizing calculations
-                    let actual_pixels = cg_image.width() as f64;
-                    
                     // Calculate size of one magnified pixel
+                    let actual_pixels = use_width;
                     let pixel_size = mag_size / actual_pixels;
                     
                     // Calculate center of magnifier
