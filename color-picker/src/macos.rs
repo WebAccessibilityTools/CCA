@@ -4,32 +4,26 @@
 //! It creates a fullscreen overlay window that captures the screen and displays
 //! a magnified view of the pixels around the cursor.
 
+
 // =============================================================================
 // IMPORTS
 // =============================================================================
 
 // Cocoa framework bindings for macOS GUI (legacy, being migrated to objc2)
-use cocoa::base::{id, nil, NO, YES};  // Basic Objective-C types
-use cocoa::foundation::{
-    NSRect,             // Rectangle type (origin + size)
-    NSPoint,            // Point type (x, y coordinates)
-    NSString,           // Objective-C string type
-};
-use cocoa::appkit::NSWindowStyleMask;  // Window style options (borderless, etc.)
+use cocoa::base::{id, nil, NO, YES};
+use cocoa::foundation::{NSRect, NSPoint, NSString};
+use cocoa::appkit::NSWindowStyleMask;
 
 // Objective-C runtime bindings for low-level messaging (legacy)
-use objc::{class, msg_send, sel, sel_impl};  // Macros for Objective-C calls
-use objc::declare::ClassDecl;                 // For creating custom Objective-C classes
-use objc::runtime::{Object, Sel};             // Runtime types for method dispatch
+use objc::{class, msg_send, sel, sel_impl};
+use objc::declare::ClassDecl;
+use objc::runtime::{Object, Sel};
 
 // objc2 imports for modern Objective-C bindings
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::{ClassType, msg_send_id};
-use objc2_foundation::{CGFloat, CGPoint, MainThreadMarker, NSAffineTransform, NSCopying, NSPoint as NSPoint2, NSRect as NSRect2, NSSize as NSSize2, NSString as NSString2};
+use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint as NSPoint2, NSRect as NSRect2, NSSize as NSSize2};
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
-    NSApp,
     NSApplication, 
     NSApplicationActivationOptions,
     NSApplicationActivationPolicy,
@@ -39,22 +33,17 @@ use objc2_app_kit::{
     NSEvent,
     NSEventModifierFlags,
     NSGraphicsContext,
-    NSImage,
     NSRunningApplication,
-    NSScreen as NSScreen2, 
     NSView, 
     NSWindow as NSWindow2,
-    NSWindowLevel,
-    NSWindowSharingType,
-    NSWindowStyleMask as NSWindowStyleMask2,
 };
 
 // Core Graphics for screen capture and pixel color extraction
-use core_graphics::display::CGDisplay;  // Display/screen functions
-use core_graphics::image::CGImage;      // Image type for screen captures
+use core_graphics::display::CGDisplay;
+use core_graphics::image::CGImage;
 
 // Standard library imports
-use std::sync::Mutex;  // Thread-safe mutex for shared state
+use std::sync::Mutex;
 
 // Import shared configuration constants from config module
 use crate::config::*;
@@ -265,26 +254,26 @@ fn register_window_class() -> &'static objc::runtime::Class {
 // OBJECTIVE-C METHOD IMPLEMENTATIONS
 // =============================================================================
 
-extern "C" fn can_become_key_window(_this: &Object, _cmd: Sel) -> bool { YES }
+extern "C" fn can_become_key_window(_this: &Object, _cmd: Sel) -> bool { true }
 
-extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool { YES }
+extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool { true }
 
-extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
+/// Helper function to stop the application and show cursor
+/// This is used by mouse_down, key_down (ESC and Enter)
+fn stop_application() {
     unsafe {
-        if let Ok(state) = MOUSE_STATE.lock() {
-            if let Some(ref info) = *state {
-                if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                    *selected = Some((info.r, info.g, info.b));
-                }
-            }
-        }
-        
         NSCursor::unhide();
+    }
+    
+    // Get the shared application and stop it
+    // We need to post a dummy event to break out of the run loop
+    unsafe {
         let app: id = msg_send![class!(NSApplication), sharedApplication];
         let _: () = msg_send![app, stop:nil];
         
+        // Create and post a dummy event to ensure the run loop exits
         let dummy_event: id = msg_send![class!(NSEvent), 
-            otherEventWithType:15u64
+            otherEventWithType:15u64  // NSEventTypeApplicationDefined
             location:NSPoint::new(0.0, 0.0)
             modifierFlags:0u64
             timestamp:0.0f64
@@ -296,6 +285,19 @@ extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
         ];
         let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
     }
+}
+
+extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
+    // Save the current color as the selected color
+    if let Ok(state) = MOUSE_STATE.lock() {
+        if let Some(ref info) = *state {
+            if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                *selected = Some((info.r, info.g, info.b));
+            }
+        }
+    }
+    
+    stop_application();
 }
 
 extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
@@ -382,30 +384,13 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
     let shift_pressed = modifier_flags.contains(NSEventModifierFlags::NSEventModifierFlagShift);
     let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
 
-    // ESC
+    // ESC - cancel and exit
     if key_code == 53 {
-        unsafe {
-            NSCursor::unhide();
-            let app: id = msg_send![class!(NSApplication), sharedApplication];
-            let _: () = msg_send![app, stop:nil];
-            
-            let dummy_event: id = msg_send![class!(NSEvent), 
-                otherEventWithType:15u64
-                location:NSPoint::new(0.0, 0.0)
-                modifierFlags:0u64
-                timestamp:0.0f64
-                windowNumber:0i64
-                context:nil
-                subtype:0i16
-                data1:0i64
-                data2:0i64
-            ];
-            let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
-        }
+        stop_application();
         return;
     }
     
-    // Enter
+    // Enter - select color and exit
     if key_code == 36 {
         if let Ok(state) = MOUSE_STATE.lock() {
             if let Some(ref info) = *state {
@@ -414,24 +399,7 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
                 }
             }
         }
-        unsafe {
-            NSCursor::unhide();
-            let app: id = msg_send![class!(NSApplication), sharedApplication];
-            let _: () = msg_send![app, stop:nil];
-            
-            let dummy_event: id = msg_send![class!(NSEvent), 
-                otherEventWithType:15u64
-                location:NSPoint::new(0.0, 0.0)
-                modifierFlags:0u64
-                timestamp:0.0f64
-                windowNumber:0i64
-                context:nil
-                subtype:0i16
-                data1:0i64
-                data2:0i64
-            ];
-            let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
-        }
+        stop_application();
         return;
     }
 
@@ -653,16 +621,16 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                     border_path.setLineWidth(BORDER_WIDTH);
                     border_path.stroke();
 
-                    // Draw hex text (still using legacy for text rendering complexity)
+                    // Draw hex text - use legacy for font with weight (objc2 doesn't have systemFontOfSize:weight:)
                     let font_cls = class!(NSFont);
                     let font: id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE weight: 0.62f64];
 
                     let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
 
-                    let text_color: id = if luminance > 0.5 {
-                        msg_send![class!(NSColor), colorWithCalibratedRed: 0.0f64 green: 0.0f64 blue: 0.0f64 alpha: 1.0f64]
+                    let text_color = if luminance > 0.5 {
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
                     } else {
-                        msg_send![class!(NSColor), colorWithCalibratedRed: 1.0f64 green: 1.0f64 blue: 1.0f64 alpha: 1.0f64]
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
                     };
 
                     let hex_text = &info.hex_color;
@@ -681,9 +649,12 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         let char_x = center_x + radius * angle.cos();
                         let char_y = center_y + radius * angle.sin();
 
+                        // Create NSString for the character
                         let char_str = c.to_string();
-                        let ns_char = NSString::alloc(nil);
-                        let ns_char = NSString::init_str(ns_char, &char_str);
+                        
+                        // Create attributes dictionary (still using legacy for complex dict creation)
+                        let ns_char_legacy = NSString::alloc(nil);
+                        let ns_char_legacy = NSString::init_str(ns_char_legacy, &char_str);
 
                         let dict_cls = class!(NSDictionary);
                         let font_attr_key = NSString::alloc(nil);
@@ -691,12 +662,13 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         let color_attr_key = NSString::alloc(nil);
                         let color_attr_key = NSString::init_str(color_attr_key, "NSColor");
 
+                        let text_color_ptr: *const NSColor = &*text_color;
                         let keys: [id; 2] = [font_attr_key, color_attr_key];
-                        let values: [id; 2] = [font, text_color];
+                        let values: [id; 2] = [font, text_color_ptr as id];
 
                         let attributes: id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
 
-                        let char_size: cocoa::foundation::NSSize = msg_send![ns_char, sizeWithAttributes: attributes];
+                        let char_size: cocoa::foundation::NSSize = msg_send![ns_char_legacy, sizeWithAttributes: attributes];
 
                         // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
@@ -708,7 +680,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRect) {
                         transform.concat();
 
                         let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
-                        let _: () = msg_send![ns_char, drawAtPoint:draw_point withAttributes:attributes];
+                        let _: () = msg_send![ns_char_legacy, drawAtPoint:draw_point withAttributes:attributes];
 
                         // Invert transform
                         let inverse = transform.copy();
