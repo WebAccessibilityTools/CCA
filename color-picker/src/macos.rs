@@ -11,16 +11,11 @@
 // Cocoa framework bindings for macOS GUI (legacy, being migrated to objc2)
 use cocoa::base::{id, nil, NO, YES};  // Basic Objective-C types
 use cocoa::foundation::{
-    NSAutoreleasePool,  // Memory management for Objective-C objects
     NSRect,             // Rectangle type (origin + size)
-    NSArray,            // Objective-C array type
     NSPoint,            // Point type (x, y coordinates)
     NSString,           // Objective-C string type
 };
-use cocoa::appkit::{
-    NSBackingStoreBuffered,              // Double-buffered window rendering
-    NSWindowStyleMask,                   // Window style options (borderless, etc.)
-};
+use cocoa::appkit::NSWindowStyleMask;  // Window style options (borderless, etc.)
 
 // Objective-C runtime bindings for low-level messaging (legacy)
 use objc::{class, msg_send, sel, sel_impl};  // Macros for Objective-C calls
@@ -312,7 +307,7 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
     
     // Get the window from the view using objc2
     let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-    let window_opt: Option<Retained<NSWindow2>> = unsafe { view_ref.window() };
+    let window_opt: Option<Retained<NSWindow2>> = view_ref.window();
     
     if let Some(window) = window_opt {
         // Convert window coordinates to screen coordinates
@@ -328,8 +323,8 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
 
             if let Ok(mut state) = MOUSE_STATE.lock() {
                 // Get scale factor using objc2
-                let scale_factor: f64 = if let Some(screen) = unsafe { window.screen() } {
-                    unsafe { screen.backingScaleFactor() }
+                let scale_factor: f64 = if let Some(screen) = window.screen() {
+                    screen.backingScaleFactor()
                 } else {
                     1.0
                 };
