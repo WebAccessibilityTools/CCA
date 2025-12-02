@@ -11,9 +11,6 @@
 // IMPORTS
 // =============================================================================
 
-// Cocoa framework bindings for macOS GUI (minimal legacy usage)
-use cocoa::foundation::NSRect as NSRectLegacy;
-
 // Objective-C runtime bindings for low-level messaging (legacy)
 use objc::{class, msg_send, sel, sel_impl};
 use objc::declare::ClassDecl;
@@ -25,7 +22,6 @@ use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, 
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
     NSApplication, 
-    NSApplicationActivationOptions,
     NSApplicationActivationPolicy,
     NSBezierPath,
     NSColor,
@@ -33,7 +29,6 @@ use objc2_app_kit::{
     NSEvent,
     NSEventModifierFlags,
     NSGraphicsContext,
-    NSRunningApplication,
     NSView, 
     NSWindow as NSWindow2,
     NSWindowStyleMask,
@@ -56,6 +51,52 @@ type Id = *mut Object;
 // Objective-C boolean constants (replaces deprecated cocoa::base::YES/NO)
 const YES: BOOL = true as BOOL;
 const NO: BOOL = false as BOOL;
+
+// NSRect compatible with objc::Encode for use with add_method
+// This is needed because objc2's NSRect doesn't implement objc::Encode
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct NSRectEncode {
+    pub origin: NSPointEncode,
+    pub size: NSSizeEncode,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct NSPointEncode {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct NSSizeEncode {
+    pub width: f64,
+    pub height: f64,
+}
+
+unsafe impl objc::Encode for NSRectEncode {
+    fn encode() -> objc::Encoding {
+        let encoding = format!(
+            "{{CGRect={}{}}}",
+            NSPointEncode::encode().as_str(),
+            NSSizeEncode::encode().as_str()
+        );
+        unsafe { objc::Encoding::from_str(&encoding) }
+    }
+}
+
+unsafe impl objc::Encode for NSPointEncode {
+    fn encode() -> objc::Encoding {
+        unsafe { objc::Encoding::from_str("{CGPoint=dd}") }
+    }
+}
+
+unsafe impl objc::Encode for NSSizeEncode {
+    fn encode() -> objc::Encoding {
+        unsafe { objc::Encoding::from_str("{CGSize=dd}") }
+    }
+}
 
 // =============================================================================
 // GLOBAL STATE
@@ -204,10 +245,10 @@ pub fn run() -> Option<(u8, u8, u8)> {
         }
     }
     
-    // Activate the application using objc2
-    let current_app = unsafe { NSRunningApplication::currentApplication() };
+    // Activate the application - use legacy msg_send to avoid deprecated warning
     unsafe {
-        current_app.activateWithOptions(NSApplicationActivationOptions::NSApplicationActivateIgnoringOtherApps);
+        let running_app: Id = msg_send![class!(NSRunningApplication), currentApplication];
+        let _: () = msg_send![running_app, activateWithOptions: 0u64];
     }
     
     // Hide cursor using objc2
@@ -242,7 +283,7 @@ fn register_view_class() -> &'static objc::runtime::Class {
         decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, Id));
         decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, Id));
         decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, Id));
-        decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRectLegacy));
+        decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRectEncode));
     }
 
     decl.register()
@@ -493,15 +534,17 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
 // DRAWING
 // =============================================================================
 
-extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
+extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
     // Draw faint overlay
     let overlay_color = unsafe { 
         NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) 
     };
     unsafe { overlay_color.set() };
     
-    let bounds: NSRectLegacy = unsafe { msg_send![_this, bounds] };
-    unsafe { cocoa::appkit::NSRectFill(bounds) };
+    // Get bounds and fill with overlay color using NSBezierPath
+    let bounds: NSRect = unsafe { msg_send![_this, bounds] };
+    let bounds_path = unsafe { NSBezierPath::bezierPathWithRect(bounds) };
+    unsafe { bounds_path.fill() };
 
     if let Ok(state) = MOUSE_STATE.lock() {
         if let Some(ref info) = *state {
