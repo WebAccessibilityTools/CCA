@@ -12,13 +12,12 @@
 // =============================================================================
 
 // Cocoa framework bindings for macOS GUI (minimal legacy usage)
-use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::NSRect as NSRectLegacy;
 
 // Objective-C runtime bindings for low-level messaging (legacy)
 use objc::{class, msg_send, sel, sel_impl};
 use objc::declare::ClassDecl;
-use objc::runtime::{Object, Sel};
+use objc::runtime::{Object, Sel, BOOL};
 
 // objc2 imports for modern Objective-C bindings
 use objc2::rc::Retained;
@@ -45,10 +44,18 @@ use core_graphics::display::CGDisplay;
 use core_graphics::image::CGImage;
 
 // Standard library imports
+use std::ptr::null_mut;
 use std::sync::Mutex;
 
 // Import shared configuration constants from config module
 use crate::config::*;
+
+// Type alias for Objective-C object pointer (replaces deprecated cocoa::base::id)
+type Id = *mut Object;
+
+// Objective-C boolean constants (replaces deprecated cocoa::base::YES/NO)
+const YES: BOOL = true as BOOL;
+const NO: BOOL = false as BOOL;
 
 // =============================================================================
 // GLOBAL STATE
@@ -156,16 +163,16 @@ pub fn run() -> Option<(u8, u8, u8)> {
     
     // Get all screens using legacy API (objc2 NSArray has issues)
     unsafe {
-        let screens: id = msg_send![class!(NSScreen), screens];
+        let screens: Id = msg_send![class!(NSScreen), screens];
         let count: usize = msg_send![screens, count];
         
         // Create an overlay window for each screen
         for i in 0..count {
-            let screen: id = msg_send![screens, objectAtIndex: i];
+            let screen: Id = msg_send![screens, objectAtIndex: i];
             let frame: NSRect = msg_send![screen, frame];
             
-            let window_alloc: id = msg_send![window_class, alloc];
-            let window: id = msg_send![window_alloc,
+            let window_alloc: Id = msg_send![window_class, alloc];
+            let window: Id = msg_send![window_alloc,
                 initWithContentRect: frame
                 styleMask: NSWindowStyleMask::Borderless
                 backing: 2u64  // NSBackingStoreBuffered = 2
@@ -187,12 +194,12 @@ pub fn run() -> Option<(u8, u8, u8)> {
             let _: () = msg_send![window, setSharingType: 0u64]; // NSWindowSharingNone
             
             // Create view
-            let view: id = msg_send![view_class, alloc];
-            let view: id = msg_send![view, initWithFrame: frame];
+            let view: Id = msg_send![view_class, alloc];
+            let view: Id = msg_send![view, initWithFrame: frame];
             
             // Set view as content and show window
             let _: () = msg_send![window, setContentView: view];
-            let _: () = msg_send![window, makeKeyAndOrderFront: nil];
+            let _: () = msg_send![window, makeKeyAndOrderFront: null_mut::<Object>()];
             let _: () = msg_send![window, makeFirstResponder: view];
         }
     }
@@ -231,10 +238,10 @@ fn register_view_class() -> &'static objc::runtime::Class {
 
     unsafe {
         decl.add_method(sel!(acceptsFirstResponder), accepts_first_responder as extern "C" fn(&Object, Sel) -> bool);
-        decl.add_method(sel!(mouseDown:), mouse_down as extern "C" fn(&Object, Sel, id));
-        decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
-        decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, id));
-        decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, id));
+        decl.add_method(sel!(mouseDown:), mouse_down as extern "C" fn(&Object, Sel, Id));
+        decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, Id));
+        decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, Id));
+        decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, Id));
         decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRectLegacy));
     }
 
@@ -270,17 +277,17 @@ fn stop_application() {
     // Get the shared application and stop it
     // We need to post a dummy event to break out of the run loop
     unsafe {
-        let app: id = msg_send![class!(NSApplication), sharedApplication];
-        let _: () = msg_send![app, stop:nil];
+        let app: Id = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![app, stop:null_mut::<Object>()];
         
         // Create and post a dummy event to ensure the run loop exits
-        let dummy_event: id = msg_send![class!(NSEvent), 
+        let dummy_event: Id = msg_send![class!(NSEvent), 
             otherEventWithType:15u64  // NSEventTypeApplicationDefined
             location:NSPoint::new(0.0, 0.0)
             modifierFlags:0u64
             timestamp:0.0f64
             windowNumber:0i64
-            context:nil
+            context:null_mut::<Object>()
             subtype:0i16
             data1:0i64
             data2:0i64
@@ -289,7 +296,7 @@ fn stop_application() {
     }
 }
 
-extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
+extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: Id) {
     // Save the current color as the selected color
     if let Ok(state) = MOUSE_STATE.lock() {
         if let Some(ref info) = *state {
@@ -302,7 +309,7 @@ extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: id) {
     stop_application();
 }
 
-extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
+extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: Id) {
     // Convert legacy id to objc2 reference
     let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
     
@@ -354,7 +361,7 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: id) {
     }
 }
 
-extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: id) {
+extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: Id) {
     // Convert legacy id to objc2 reference
     let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
     
@@ -374,7 +381,7 @@ extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: id) {
     }
 }
 
-extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
+extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
     // Convert legacy id to objc2 reference
     let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
     
@@ -453,11 +460,11 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: id) {
             if let Ok(mut state) = MOUSE_STATE.lock() {
                 // Get window and screen info using legacy API (still needed for view)
                 unsafe {
-                    let window: id = msg_send![_this, window];
+                    let window: Id = msg_send![_this, window];
                     let screen_point = NSPoint::new(new_x, cocoa_y);
                     let window_point: NSPoint = msg_send![window, convertPointFromScreen: screen_point];
 
-                    let screen: id = msg_send![window, screen];
+                    let screen: Id = msg_send![window, screen];
                     let scale_factor: f64 = msg_send![screen, backingScaleFactor];
 
                     *state = Some(MouseColorInfo {
@@ -528,7 +535,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
                 // Create NSImage from CGImage (still needs legacy for CGImage conversion)
                 unsafe {
                     let ns_image_cls = class!(NSImage);
-                    let ns_image: id = msg_send![ns_image_cls, alloc];
+                    let ns_image: Id = msg_send![ns_image_cls, alloc];
 
                     let cg_image_ptr = {
                         let ptr_addr = &cg_image as *const CGImage as *const *const core_graphics::sys::CGImage;
@@ -536,7 +543,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
                     };
 
                     let full_size = NSSize::new(img_width, img_height);
-                    let ns_image: id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:full_size];
+                    let ns_image: Id = msg_send![ns_image, initWithCGImage:cg_image_ptr size:full_size];
                     let cropped_size = NSSize::new(use_width, use_height);
 
                     let mag_x = info.x - mag_size / 2.0;
@@ -625,7 +632,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
 
                     // Draw hex text - use legacy for font with weight (objc2 doesn't have systemFontOfSize:weight:)
                     let font_cls = class!(NSFont);
-                    let font: id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE weight: 0.62f64];
+                    let font: Id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE weight: 0.62f64];
 
                     let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
 
@@ -662,15 +669,15 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
                         // Create attributes dictionary
                         // Convert objc2 types to raw pointers for legacy msg_send!
                         let dict_cls = class!(NSDictionary);
-                        let text_color_ptr: *const NSColor = &*text_color;
-                        let ns_char_ptr: id = &*ns_char as *const NSString as id;
-                        let font_key_ptr: id = &*font_attr_key as *const NSString as id;
-                        let color_key_ptr: id = &*color_attr_key as *const NSString as id;
+                        let text_color_ptr = &*text_color as *const NSColor as Id;
+                        let ns_char_ptr: Id = &*ns_char as *const NSString as Id;
+                        let font_key_ptr: Id = &*font_attr_key as *const NSString as Id;
+                        let color_key_ptr: Id = &*color_attr_key as *const NSString as Id;
                         
-                        let keys: [id; 2] = [font_key_ptr, color_key_ptr];
-                        let values: [id; 2] = [font, text_color_ptr as id];
+                        let keys: [Id; 2] = [font_key_ptr, color_key_ptr];
+                        let values: [Id; 2] = [font, text_color_ptr];
 
-                        let attributes: id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
+                        let attributes: Id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
 
                         let char_size: NSSize = msg_send![ns_char_ptr, sizeWithAttributes: attributes];
 
