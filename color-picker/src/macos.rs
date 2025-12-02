@@ -11,14 +11,13 @@
 // IMPORTS
 // =============================================================================
 
-// Objective-C runtime bindings for low-level messaging (legacy)
+// Objective-C runtime bindings for low-level messaging (legacy - only for msg_send! where needed)
 use objc::{class, msg_send, sel, sel_impl};
-use objc::declare::ClassDecl;
 use objc::runtime::{Object, Sel, BOOL};
 
 // objc2 imports for modern Objective-C bindings
+use objc2::{declare_class, mutability, ClassType, DeclaredClass};
 use objc2::rc::Retained;
-use objc2::ClassType;
 use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, NSRect, NSSize, NSString};
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
@@ -41,7 +40,6 @@ use core_graphics::display::CGDisplay;
 use core_graphics::image::CGImage;
 
 // Standard library imports
-use std::ptr::null_mut;
 use std::sync::Mutex;
 
 // Import shared configuration constants from config module
@@ -54,51 +52,235 @@ type Id = *mut Object;
 const YES: BOOL = true as BOOL;
 const NO: BOOL = false as BOOL;
 
-// NSRect compatible with objc::Encode for use with add_method
-// This is needed because objc2's NSRect doesn't implement objc::Encode
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct NSRectEncode {
-    pub origin: NSPointEncode,
-    pub size: NSSizeEncode,
-}
+// =============================================================================
+// CUSTOM CLASSES USING OBJC2 DECLARE_CLASS
+// =============================================================================
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct NSPointEncode {
-    pub x: f64,
-    pub y: f64,
-}
+// Instance variables for our custom view (none needed, we use global state)
+pub struct ColorPickerViewIvars;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct NSSizeEncode {
-    pub width: f64,
-    pub height: f64,
-}
+declare_class!(
+    pub struct ColorPickerView;
 
-unsafe impl objc::Encode for NSRectEncode {
-    fn encode() -> objc::Encoding {
-        let encoding = format!(
-            "{{CGRect={}{}}}",
-            NSPointEncode::encode().as_str(),
-            NSSizeEncode::encode().as_str()
-        );
-        unsafe { objc::Encoding::from_str(&encoding) }
+    // SAFETY: ColorPickerView only uses immutable references
+    unsafe impl ClassType for ColorPickerView {
+        type Super = NSView;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "ColorPickerView";
     }
-}
 
-unsafe impl objc::Encode for NSPointEncode {
-    fn encode() -> objc::Encoding {
-        unsafe { objc::Encoding::from_str("{CGPoint=dd}") }
+    impl DeclaredClass for ColorPickerView {
+        type Ivars = ColorPickerViewIvars;
     }
-}
 
-unsafe impl objc::Encode for NSSizeEncode {
-    fn encode() -> objc::Encoding {
-        unsafe { objc::Encoding::from_str("{CGSize=dd}") }
+    unsafe impl ColorPickerView {
+        #[method(acceptsFirstResponder)]
+        fn accepts_first_responder(&self) -> bool {
+            true
+        }
+
+        #[method(mouseDown:)]
+        fn mouse_down(&self, _event: &NSEvent) {
+            // Save the current color as the selected color
+            if let Ok(state) = MOUSE_STATE.lock() {
+                if let Some(ref info) = *state {
+                    if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                        *selected = Some((info.r, info.g, info.b));
+                    }
+                }
+            }
+            stop_application();
+        }
+
+        #[method(mouseMoved:)]
+        fn mouse_moved(&self, event: &NSEvent) {
+            // Get mouse location in window coordinates
+            let location: NSPoint = unsafe { event.locationInWindow() };
+            
+            // Get the window from the view
+            let window_opt: Option<Retained<NSWindow2>> = self.window();
+            
+            if let Some(window) = window_opt {
+                // Convert window coordinates to screen coordinates
+                let screen_location: NSPoint = unsafe { window.convertPointToScreen(location) };
+                
+                // Get the color of the pixel at the cursor position
+                if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
+                    let r_int = (r * 255.0) as u8;
+                    let g_int = (g * 255.0) as u8;
+                    let b_int = (b * 255.0) as u8;
+
+                    let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+
+                    if let Ok(mut state) = MOUSE_STATE.lock() {
+                        // Get scale factor
+                        let scale_factor: f64 = if let Some(screen) = window.screen() {
+                            screen.backingScaleFactor()
+                        } else {
+                            1.0
+                        };
+                        
+                        *state = Some(MouseColorInfo {
+                            x: location.x,
+                            y: location.y,
+                            screen_x: screen_location.x,
+                            screen_y: screen_location.y,
+                            r: r_int,
+                            g: g_int,
+                            b: b_int,
+                            hex_color: hex_color.clone(),
+                            scale_factor,
+                        });
+                    }
+
+                    // Request redraw
+                    unsafe { self.setNeedsDisplay(true) };
+                }
+            }
+        }
+
+        #[method(scrollWheel:)]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            // Get the vertical scroll delta
+            let delta_y: f64 = unsafe { event.deltaY() };
+
+            if delta_y != 0.0 {
+                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                    let new_zoom = *zoom + delta_y * ZOOM_STEP;
+                    *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+                }
+
+                // Request redraw
+                unsafe { self.setNeedsDisplay(true) };
+            }
+        }
+
+        #[method(keyDown:)]
+        fn key_down(&self, event: &NSEvent) {
+            // Get key code and modifier flags
+            let key_code: u16 = unsafe { event.keyCode() };
+            let modifier_flags: NSEventModifierFlags = unsafe { event.modifierFlags() };
+            
+            // Check if Shift key is pressed
+            let shift_pressed = modifier_flags.contains(NSEventModifierFlags::NSEventModifierFlagShift);
+            let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
+
+            // ESC = 53, Enter/Return = 36
+            if key_code == 53 {
+                // ESC - cancel
+                stop_application();
+            } else if key_code == 36 {
+                // Enter - confirm selection
+                if let Ok(state) = MOUSE_STATE.lock() {
+                    if let Some(ref info) = *state {
+                        if let Ok(mut selected) = SELECTED_COLOR.lock() {
+                            *selected = Some((info.r, info.g, info.b));
+                        }
+                    }
+                }
+                stop_application();
+            } else {
+                // Arrow keys: left=123, right=124, down=125, up=126
+                let (dx, dy): (f64, f64) = match key_code {
+                    123 => (-move_amount, 0.0),  // Left
+                    124 => (move_amount, 0.0),   // Right
+                    125 => (0.0, -move_amount),  // Down
+                    126 => (0.0, move_amount),   // Up
+                    _ => (0.0, 0.0),
+                };
+
+                if dx != 0.0 || dy != 0.0 {
+                    // Move cursor and update state
+                    if let Ok(state) = MOUSE_STATE.lock() {
+                        if let Some(ref info) = *state {
+                            let new_x = info.screen_x + dx;
+                            let new_y = info.screen_y + dy;
+                            
+                            // Get screen height for coordinate conversion
+                            let main_display = CGDisplay::main();
+                            let screen_height = main_display.pixels_high() as f64;
+                            
+                            // Convert Cocoa coordinates to Core Graphics coordinates
+                            let cg_y = screen_height - new_y;
+                            
+                            // Move the cursor
+                            let _ = CGDisplay::warp_mouse_cursor_position(core_graphics::geometry::CGPoint::new(new_x, cg_y));
+                            
+                            drop(state);
+                            
+                            // Get new color after moving cursor
+                            if let Some((r, g, b)) = get_pixel_color(new_x, new_y) {
+                                let r_int = (r * 255.0) as u8;
+                                let g_int = (g * 255.0) as u8;
+                                let b_int = (b * 255.0) as u8;
+
+                                let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+
+                                if let Ok(mut state) = MOUSE_STATE.lock() {
+                                    if let Some(window) = self.window() {
+                                        let screen_point = NSPoint::new(new_x, new_y);
+                                        let window_point: NSPoint = window.convertPointFromScreen(screen_point);
+
+                                        let scale_factor: f64 = if let Some(screen) = window.screen() {
+                                            screen.backingScaleFactor()
+                                        } else {
+                                            1.0
+                                        };
+
+                                        *state = Some(MouseColorInfo {
+                                            x: window_point.x,
+                                            y: window_point.y,
+                                            screen_x: new_x,
+                                            screen_y: new_y,
+                                            r: r_int,
+                                            g: g_int,
+                                            b: b_int,
+                                            hex_color,
+                                            scale_factor,
+                                        });
+                                    }
+                                }
+
+                                // Request redraw
+                                unsafe { self.setNeedsDisplay(true) };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        #[method(drawRect:)]
+        fn draw_rect(&self, _rect: NSRect) {
+            draw_view(self);
+        }
     }
-}
+);
+
+// Instance variables for our custom window (none needed)
+pub struct KeyableWindowIvars;
+
+declare_class!(
+    pub struct KeyableWindow;
+
+    // SAFETY: KeyableWindow only uses immutable references
+    unsafe impl ClassType for KeyableWindow {
+        type Super = NSWindow2;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "KeyableWindow";
+    }
+
+    impl DeclaredClass for KeyableWindow {
+        type Ivars = KeyableWindowIvars;
+    }
+
+    unsafe impl KeyableWindow {
+        #[method(canBecomeKeyWindow)]
+        fn can_become_key_window(&self) -> bool {
+            true
+        }
+    }
+);
 
 // =============================================================================
 // GLOBAL STATE
@@ -185,149 +367,17 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
 // PUBLIC API
 // =============================================================================
 
-/// Runs the color picker application on macOS
-pub fn run() -> Option<(u8, u8, u8)> {
-    if let Ok(mut color) = SELECTED_COLOR.lock() {
-        *color = None;
-    }
-    
-    // Get main thread marker - required for UI operations
-    let mtm = MainThreadMarker::new().expect("Must be called from main thread");
-    
-    // Get the shared application instance
-    let app = NSApplication::sharedApplication(mtm);
-    
-    // Set activation policy to Regular so the app appears in the dock
-    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
-    
-    // Register our custom view and window classes (still using legacy for class registration)
-    let view_class = register_view_class();
-    let window_class = register_window_class();
-    
-    // Get all screens using legacy API (objc2 NSArray has issues)
-    unsafe {
-        let screens: Id = msg_send![class!(NSScreen), screens];
-        let count: usize = msg_send![screens, count];
-        
-        // Create an overlay window for each screen
-        for i in 0..count {
-            let screen: Id = msg_send![screens, objectAtIndex: i];
-            let frame: NSRect = msg_send![screen, frame];
-            
-            let window_alloc: Id = msg_send![window_class, alloc];
-            let window: Id = msg_send![window_alloc,
-                initWithContentRect: frame
-                styleMask: NSWindowStyleMask::Borderless
-                backing: 2u64  // NSBackingStoreBuffered = 2
-                defer: NO
-            ];
-            
-            // Set window level very high
-            let _: () = msg_send![window, setLevel: 1000i64];
-            
-            // Get clear color using objc2
-            let clear_color = NSColor::clearColor();
-            let _: () = msg_send![window, setBackgroundColor: &*clear_color];
-            
-            // Configure window
-            let _: () = msg_send![window, setOpaque: NO];
-            let _: () = msg_send![window, setHasShadow: NO];
-            let _: () = msg_send![window, setIgnoresMouseEvents: NO];
-            let _: () = msg_send![window, setAcceptsMouseMovedEvents: YES];
-            let _: () = msg_send![window, setSharingType: 0u64]; // NSWindowSharingNone
-            
-            // Create view
-            let view: Id = msg_send![view_class, alloc];
-            let view: Id = msg_send![view, initWithFrame: frame];
-            
-            // Set view as content and show window
-            let _: () = msg_send![window, setContentView: view];
-            let _: () = msg_send![window, makeKeyAndOrderFront: null_mut::<Object>()];
-            let _: () = msg_send![window, makeFirstResponder: view];
-        }
-    }
-    
-    // Activate the application - use legacy msg_send to avoid deprecated warning
-    unsafe {
-        let running_app: Id = msg_send![class!(NSRunningApplication), currentApplication];
-        let _: () = msg_send![running_app, activateWithOptions: 0u64];
-    }
-    
-    // Hide cursor using objc2
-    unsafe {
-        NSCursor::hide();
-    }
-    
-    // Run the application event loop
-    unsafe {
-        app.run();
-    }
-    
-    // Return the selected color (if any)
-    if let Ok(color) = SELECTED_COLOR.lock() {
-        color.clone()
-    } else {
-        None
-    }
-}
-
-// =============================================================================
-// CUSTOM CLASS REGISTRATION
-// =============================================================================
-
-fn register_view_class() -> &'static objc::runtime::Class {
-    // Get NSView class via objc2 and convert to objc runtime class
-    let superclass_ptr = NSView::class() as *const objc2::runtime::AnyClass as *const objc::runtime::Class;
-    let superclass = unsafe { &*superclass_ptr };
-    let mut decl = ClassDecl::new("ColorPickerView", superclass).unwrap();
-
-    unsafe {
-        decl.add_method(sel!(acceptsFirstResponder), accepts_first_responder as extern "C" fn(&Object, Sel) -> bool);
-        decl.add_method(sel!(mouseDown:), mouse_down as extern "C" fn(&Object, Sel, Id));
-        decl.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, Id));
-        decl.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, Id));
-        decl.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, Id));
-        decl.add_method(sel!(drawRect:), draw_rect as extern "C" fn(&Object, Sel, NSRectEncode));
-    }
-
-    decl.register()
-}
-
-fn register_window_class() -> &'static objc::runtime::Class {
-    // Get NSWindow class via objc2 and convert to objc runtime class
-    let superclass_ptr = NSWindow2::class() as *const objc2::runtime::AnyClass as *const objc::runtime::Class;
-    let superclass = unsafe { &*superclass_ptr };
-    let mut decl = ClassDecl::new("KeyableWindow", superclass).unwrap();
-
-    unsafe {
-        decl.add_method(sel!(canBecomeKeyWindow), can_become_key_window as extern "C" fn(&Object, Sel) -> bool);
-    }
-
-    decl.register()
-}
-
-// =============================================================================
-// OBJECTIVE-C METHOD IMPLEMENTATIONS
-// =============================================================================
-
-extern "C" fn can_become_key_window(_this: &Object, _cmd: Sel) -> bool { true }
-
-extern "C" fn accepts_first_responder(_this: &Object, _cmd: Sel) -> bool { true }
-
 /// Helper function to stop the application and show cursor
-/// This is used by mouse_down, key_down (ESC and Enter)
 fn stop_application() {
     unsafe {
         NSCursor::unhide();
     }
     
-    // Get the shared application and stop it
-    // We need MainThreadMarker - this function is always called from the main thread
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApplication::sharedApplication(mtm);
         app.stop(None);
         
-        // Create a dummy event to ensure the run loop exits using objc2
+        // Create a dummy event to ensure the run loop exits
         unsafe {
             use objc2_app_kit::NSEventType;
             
@@ -350,196 +400,89 @@ fn stop_application() {
     }
 }
 
-extern "C" fn mouse_down(_this: &Object, _cmd: Sel, _event: Id) {
-    // Save the current color as the selected color
-    if let Ok(state) = MOUSE_STATE.lock() {
-        if let Some(ref info) = *state {
-            if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                *selected = Some((info.r, info.g, info.b));
-            }
-        }
+/// Runs the color picker application on macOS
+pub fn run() -> Option<(u8, u8, u8)> {
+    if let Ok(mut color) = SELECTED_COLOR.lock() {
+        *color = None;
     }
     
-    stop_application();
-}
-
-extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: Id) {
-    // Convert legacy id to objc2 reference
-    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
+    // Get main thread marker - required for UI operations
+    let mtm = MainThreadMarker::new().expect("Must be called from main thread");
     
-    // Get mouse location in window coordinates using objc2
-    let location: NSPoint = unsafe { event_ref.locationInWindow() };
+    // Get the shared application instance
+    let app = NSApplication::sharedApplication(mtm);
     
-    // Get the window from the view using objc2
-    let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-    let window_opt: Option<Retained<NSWindow2>> = view_ref.window();
+    // Set activation policy to Regular so the app appears in the dock
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
     
-    if let Some(window) = window_opt {
-        // Convert window coordinates to screen coordinates
-        let screen_location: NSPoint = unsafe { window.convertPointToScreen(location) };
+    // Get all screens and create windows
+    unsafe {
+        let screens: Id = msg_send![class!(NSScreen), screens];
+        let count: usize = msg_send![screens, count];
         
-        // Get the color of the pixel at the cursor position
-        if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
-            let r_int = (r * 255.0) as u8;
-            let g_int = (g * 255.0) as u8;
-            let b_int = (b * 255.0) as u8;
-
-            let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
-
-            if let Ok(mut state) = MOUSE_STATE.lock() {
-                // Get scale factor using objc2
-                let scale_factor: f64 = if let Some(screen) = window.screen() {
-                    screen.backingScaleFactor()
-                } else {
-                    1.0
-                };
-                
-                *state = Some(MouseColorInfo {
-                    x: location.x,
-                    y: location.y,
-                    screen_x: screen_location.x,
-                    screen_y: screen_location.y,
-                    r: r_int,
-                    g: g_int,
-                    b: b_int,
-                    hex_color: hex_color.clone(),
-                    scale_factor,
-                });
-            }
-
-            // Request redraw using objc2
-            let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-            unsafe { view_ref.setNeedsDisplay(true) };
+        for i in 0..count {
+            let screen: Id = msg_send![screens, objectAtIndex: i];
+            let frame: NSRect = msg_send![screen, frame];
+            
+            // Create window using our KeyableWindow class via msg_send
+            // Convert objc2 class to raw pointer for legacy msg_send!
+            let window_cls = KeyableWindow::class() as *const objc2::runtime::AnyClass as *const Object;
+            let window_alloc: Id = msg_send![window_cls, alloc];
+            let window: Id = msg_send![window_alloc,
+                initWithContentRect: frame
+                styleMask: NSWindowStyleMask::Borderless
+                backing: 2u64
+                defer: NO
+            ];
+            
+            // Convert to objc2 reference for method calls
+            let window_ref: &KeyableWindow = &*(window as *const KeyableWindow);
+            
+            window_ref.setLevel(1000);
+            
+            let clear_color = NSColor::clearColor();
+            window_ref.setBackgroundColor(Some(&clear_color));
+            
+            window_ref.setOpaque(false);
+            window_ref.setHasShadow(false);
+            window_ref.setIgnoresMouseEvents(false);
+            window_ref.setAcceptsMouseMovedEvents(true);
+            let _: () = msg_send![window, setSharingType: 0u64];
+            
+            // Create view using our ColorPickerView class via msg_send
+            let view_cls = ColorPickerView::class() as *const objc2::runtime::AnyClass as *const Object;
+            let view_alloc: Id = msg_send![view_cls, alloc];
+            let view: Id = msg_send![view_alloc, initWithFrame: frame];
+            
+            let view_ref: &ColorPickerView = &*(view as *const ColorPickerView);
+            
+            window_ref.setContentView(Some(view_ref));
+            window_ref.makeKeyAndOrderFront(None);
+            window_ref.makeFirstResponder(Some(view_ref));
         }
     }
-}
-
-extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: Id) {
-    // Convert legacy id to objc2 reference
-    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
     
-    // Get the vertical scroll delta using objc2
-    let delta_y: f64 = unsafe { event_ref.deltaY() };
-
-    if delta_y != 0.0 {
-        if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
-            let new_zoom = *zoom + delta_y * ZOOM_STEP;
-            *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-        }
-
-        // Request redraw using objc2
-        let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-        unsafe { view_ref.setNeedsDisplay(true) };
-    }
-}
-
-extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
-    // Convert legacy id to objc2 reference
-    let event_ref: &NSEvent = unsafe { &*(event as *const NSEvent) };
-    
-    // Get key code and modifier flags using objc2
-    let key_code: u16 = unsafe { event_ref.keyCode() };
-    let modifier_flags: NSEventModifierFlags = unsafe { event_ref.modifierFlags() };
-    
-    // Check if Shift key is pressed
-    let shift_pressed = modifier_flags.contains(NSEventModifierFlags::NSEventModifierFlagShift);
-    let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
-
-    // ESC - cancel and exit
-    if key_code == 53 {
-        stop_application();
-        return;
+    // Activate the application
+    unsafe {
+        let running_app: Id = msg_send![class!(NSRunningApplication), currentApplication];
+        let _: () = msg_send![running_app, activateWithOptions: 0u64];
     }
     
-    // Enter - select color and exit
-    if key_code == 36 {
-        if let Ok(state) = MOUSE_STATE.lock() {
-            if let Some(ref info) = *state {
-                if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                    *selected = Some((info.r, info.g, info.b));
-                }
-            }
-        }
-        stop_application();
-        return;
+    // Hide cursor
+    unsafe {
+        NSCursor::hide();
     }
-
-    // Arrow keys
-    let (dx, dy): (f64, f64) = match key_code {
-        123 => (-move_amount, 0.0),  // Left
-        124 => (move_amount, 0.0),   // Right
-        125 => (0.0, -move_amount),  // Down
-        126 => (0.0, move_amount),   // Up
-        _ => (0.0, 0.0),
-    };
-
-    if dx != 0.0 || dy != 0.0 {
-        let cg_event = core_graphics::event::CGEvent::new(
-            core_graphics::event_source::CGEventSource::new(
-                core_graphics::event_source::CGEventSourceStateID::HIDSystemState
-            ).unwrap()
-        ).unwrap();
-
-        let current_pos = cg_event.location();
-
-        let new_x = current_pos.x + dx;
-        let new_y = current_pos.y - dy;
-
-        let new_pos = core_graphics::geometry::CGPoint::new(new_x, new_y);
-
-        let move_event = core_graphics::event::CGEvent::new_mouse_event(
-            core_graphics::event_source::CGEventSource::new(
-                core_graphics::event_source::CGEventSourceStateID::HIDSystemState
-            ).unwrap(),
-            core_graphics::event::CGEventType::MouseMoved,
-            new_pos,
-            core_graphics::event::CGMouseButton::Left,
-        ).unwrap();
-
-        move_event.post(core_graphics::event::CGEventTapLocation::HID);
-
-        let main_display = CGDisplay::main();
-        let screen_height = main_display.pixels_high() as f64;
-        let cocoa_y = screen_height - new_y;
-
-        if let Some((r, g, b)) = get_pixel_color(new_x, cocoa_y) {
-            let r_int = (r * 255.0) as u8;
-            let g_int = (g * 255.0) as u8;
-            let b_int = (b * 255.0) as u8;
-
-            let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
-
-            if let Ok(mut state) = MOUSE_STATE.lock() {
-                // Get window and screen info using objc2
-                let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-                if let Some(window) = view_ref.window() {
-                    let screen_point = NSPoint::new(new_x, cocoa_y);
-                    let window_point: NSPoint = window.convertPointFromScreen(screen_point);
-
-                    let scale_factor: f64 = if let Some(screen) = window.screen() {
-                        screen.backingScaleFactor()
-                    } else {
-                        1.0
-                    };
-
-                    *state = Some(MouseColorInfo {
-                        x: window_point.x,
-                        y: window_point.y,
-                        screen_x: new_x,
-                        screen_y: cocoa_y,
-                        r: r_int,
-                        g: g_int,
-                        b: b_int,
-                        hex_color: hex_color.clone(),
-                        scale_factor,
-                    });
-                }
-            }
-
-            // Request redraw using objc2
-            let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-            unsafe { view_ref.setNeedsDisplay(true) };
-        }
+    
+    // Run the application event loop
+    unsafe {
+        app.run();
+    }
+    
+    // Return the selected color (if any)
+    if let Ok(color) = SELECTED_COLOR.lock() {
+        color.clone()
+    } else {
+        None
     }
 }
 
@@ -547,14 +490,14 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
 // DRAWING
 // =============================================================================
 
-extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
+/// Main drawing function called from ColorPickerView's drawRect method
+fn draw_view(view: &NSView) {
     // Draw faint overlay
     let overlay_color = unsafe { NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) };
     unsafe { overlay_color.set() };
     
-    // Get bounds using objc2 and fill with overlay color
-    let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
-    let bounds: NSRect = view_ref.bounds();
+    // Get bounds and fill with overlay color
+    let bounds: NSRect = view.bounds();
     let bounds_path = unsafe { NSBezierPath::bezierPathWithRect(bounds) };
     unsafe { bounds_path.fill() };
 
@@ -587,7 +530,6 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                 let use_width = if img_width > target_pixels { target_pixels } else { img_width };
                 let use_height = if img_height > target_pixels { target_pixels } else { img_height };
                 
-                // Create NSImage from CGImage (still needs legacy for CGImage conversion)
                 unsafe {
                     let ns_image_cls = class!(NSImage);
                     let ns_image: Id = msg_send![ns_image_cls, alloc];
@@ -609,14 +551,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         NSSize::new(mag_size, mag_size)
                     );
 
-                    // Create circular clip using objc2
-                    let mag_rect2 = NSRect::new(
-                        NSPoint::new(mag_x, mag_y),
-                        NSSize::new(mag_size, mag_size)
-                    );
-                    let circular_clip = NSBezierPath::bezierPathWithOvalInRect(mag_rect2);
+                    let circular_clip = NSBezierPath::bezierPathWithOvalInRect(mag_rect);
 
-                    // Save graphics state using objc2
                     NSGraphicsContext::saveGraphicsState_class();
 
                     if let Some(graphics_context) = NSGraphicsContext::currentContext() {
@@ -630,13 +566,11 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         cropped_size
                     );
 
-                    // Draw the image (keep legacy - objc2 NSImage doesn't have this method exposed)
                     let _: () = msg_send![ns_image, drawInRect:mag_rect
                                           fromRect:from_rect
                                           operation:2u64
                                           fraction:1.0f64];
 
-                    // Restore graphics state using objc2
                     NSGraphicsContext::restoreGraphicsState_class();
 
                     // Draw reticle
@@ -655,16 +589,15 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                     let reticle_center_y = center_y + offset;
 
                     let half_pixel = pixel_size / 2.0;
-                    let square_rect2 = NSRect::new(
+                    let square_rect = NSRect::new(
                         NSPoint::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
                         NSSize::new(pixel_size, pixel_size)
                     );
 
-                    // Gray reticle color using objc2
                     let gray_color = NSColor::colorWithCalibratedRed_green_blue_alpha(0.5, 0.5, 0.5, 1.0);
                     gray_color.setStroke();
 
-                    let reticle_path = NSBezierPath::bezierPathWithRect(square_rect2);
+                    let reticle_path = NSBezierPath::bezierPathWithRect(square_rect);
                     reticle_path.setLineWidth(1.0);
                     reticle_path.stroke();
 
@@ -674,7 +607,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                     let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
                     let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
 
-                    let border_rect2 = NSRect::new(
+                    let border_rect = NSRect::new(
                         NSPoint::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
                         NSSize::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
                     );
@@ -682,11 +615,11 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                     let border_color = NSColor::colorWithCalibratedRed_green_blue_alpha(r_val, g_val, b_val, 1.0);
                     border_color.setStroke();
 
-                    let border_path = NSBezierPath::bezierPathWithOvalInRect(border_rect2);
+                    let border_path = NSBezierPath::bezierPathWithOvalInRect(border_rect);
                     border_path.setLineWidth(BORDER_WIDTH);
                     border_path.stroke();
 
-                    // Draw hex text - use legacy for font with weight (objc2 doesn't have systemFontOfSize:weight:)
+                    // Draw hex text
                     let font_cls = class!(NSFont);
                     let font: Id = msg_send![font_cls, systemFontOfSize: HEX_FONT_SIZE weight: 0.62f64];
 
@@ -714,32 +647,26 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         let char_x = center_x + radius * angle.cos();
                         let char_y = center_y + radius * angle.sin();
 
-                        // Create NSString for the character using objc2
                         let char_str = c.to_string();
                         let ns_char = NSString::from_str(&char_str);
                         
-                        // Create attribute keys using objc2
                         use objc2_foundation::NSDictionary;
                         use objc2::runtime::AnyObject;
                         
                         let font_attr_key = NSString::from_str("NSFont");
                         let color_attr_key = NSString::from_str("NSColor");
                         
-                        // Create Retained references for font and text_color
                         let font_retained: Retained<AnyObject> = 
                             Retained::retain(font as *mut AnyObject).unwrap();
                         let color_retained: Retained<AnyObject> = 
                             Retained::cast(text_color.clone());
                         
-                        // Create attributes dictionary using objc2
                         let keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
                         let values: Vec<Retained<AnyObject>> = vec![font_retained, color_retained];
                         let attributes = NSDictionary::from_vec(keys, values);
 
-                        // Get character size using objc2 NSStringDrawing
                         let char_size: NSSize = ns_char.sizeWithAttributes(Some(&attributes));
 
-                        // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
                         transform.translateXBy_yBy(char_x, char_y);
 
@@ -748,11 +675,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
 
                         transform.concat();
 
-                        // Draw the character using objc2 NSStringDrawing trait
                         let draw_point = NSPoint::new(-char_size.width, -char_size.height);
                         ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes));
 
-                        // Invert transform
                         let inverse = transform.copy();
                         inverse.invert();
                         inverse.concat();
