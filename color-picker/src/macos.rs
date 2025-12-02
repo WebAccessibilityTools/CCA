@@ -325,26 +325,27 @@ fn stop_application() {
     // We need MainThreadMarker - this function is always called from the main thread
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApplication::sharedApplication(mtm);
-        unsafe {
-            app.stop(None);
-        }
+        app.stop(None);
         
-        // Create and post a dummy event to ensure the run loop exits
-        // Convert app to raw pointer for legacy msg_send!
-        let app_ptr: Id = &*app as *const NSApplication as Id;
+        // Create a dummy event to ensure the run loop exits using objc2
         unsafe {
-            let dummy_event: Id = msg_send![class!(NSEvent), 
-                otherEventWithType:15u64  // NSEventTypeApplicationDefined
-                location:NSPoint::new(0.0, 0.0)
-                modifierFlags:0u64
-                timestamp:0.0f64
-                windowNumber:0i64
-                context:null_mut::<Object>()
-                subtype:0i16
-                data1:0i64
-                data2:0i64
-            ];
-            let _: () = msg_send![app_ptr, postEvent:dummy_event atStart:YES];
+            use objc2_app_kit::NSEventType;
+            
+            let dummy_event = NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                NSEventType::ApplicationDefined,
+                NSPoint::new(0.0, 0.0),
+                NSEventModifierFlags::empty(),
+                0.0,
+                0,
+                None,
+                0,
+                0,
+                0
+            );
+            
+            if let Some(event) = dummy_event {
+                app.postEvent_atStart(&event, true);
+            }
         }
     }
 }
@@ -513,7 +514,7 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
                 let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
                 if let Some(window) = view_ref.window() {
                     let screen_point = NSPoint::new(new_x, cocoa_y);
-                    let window_point: NSPoint = unsafe { window.convertPointFromScreen(screen_point) };
+                    let window_point: NSPoint = window.convertPointFromScreen(screen_point);
 
                     let scale_factor: f64 = if let Some(screen) = window.screen() {
                         screen.backingScaleFactor()
@@ -548,9 +549,7 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
 
 extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
     // Draw faint overlay
-    let overlay_color = unsafe { 
-        NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) 
-    };
+    let overlay_color = unsafe { NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) };
     unsafe { overlay_color.set() };
     
     // Get bounds using objc2 and fill with overlay color
@@ -631,10 +630,11 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         cropped_size
                     );
 
+                    // Draw the image (keep legacy - objc2 NSImage doesn't have this method exposed)
                     let _: () = msg_send![ns_image, drawInRect:mag_rect
                                           fromRect:from_rect
                                           operation:2u64
-                                          fraction:1.0];
+                                          fraction:1.0f64];
 
                     // Restore graphics state using objc2
                     NSGraphicsContext::restoreGraphicsState_class();
@@ -719,27 +719,25 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         let ns_char = NSString::from_str(&char_str);
                         
                         // Create attribute keys using objc2
-                        let font_attr_key = NSString::from_str("NSFont");
-                        let color_attr_key = NSString::from_str("NSColor");
-
-                        // Create attributes dictionary using legacy msg_send (objc2 NSDictionary::from_vec requires Retained values)
-                        let dict_cls = class!(NSDictionary);
-                        let font_key_ptr: Id = &*font_attr_key as *const NSString as Id;
-                        let color_key_ptr: Id = &*color_attr_key as *const NSString as Id;
-                        let text_color_ptr: Id = &*text_color as *const NSColor as Id;
-                        
-                        let keys: [Id; 2] = [font_key_ptr, color_key_ptr];
-                        let values: [Id; 2] = [font, text_color_ptr];
-
-                        let attributes: Id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
-                        
-                        // Convert to objc2 NSDictionary reference for use with NSStringDrawing
                         use objc2_foundation::NSDictionary;
                         use objc2::runtime::AnyObject;
-                        let attrs_ref: &NSDictionary<NSString, AnyObject> = unsafe { &*(attributes as *const NSDictionary<_, _>) };
+                        
+                        let font_attr_key = NSString::from_str("NSFont");
+                        let color_attr_key = NSString::from_str("NSColor");
+                        
+                        // Create Retained references for font and text_color
+                        let font_retained: Retained<AnyObject> = 
+                            Retained::retain(font as *mut AnyObject).unwrap();
+                        let color_retained: Retained<AnyObject> = 
+                            Retained::cast(text_color.clone());
+                        
+                        // Create attributes dictionary using objc2
+                        let keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
+                        let values: Vec<Retained<AnyObject>> = vec![font_retained, color_retained];
+                        let attributes = NSDictionary::from_vec(keys, values);
 
                         // Get character size using objc2 NSStringDrawing
-                        let char_size: NSSize = unsafe { ns_char.sizeWithAttributes(Some(attrs_ref)) };
+                        let char_size: NSSize = ns_char.sizeWithAttributes(Some(&attributes));
 
                         // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
@@ -752,7 +750,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
 
                         // Draw the character using objc2 NSStringDrawing trait
                         let draw_point = NSPoint::new(-char_size.width, -char_size.height);
-                        unsafe { ns_char.drawAtPoint_withAttributes(draw_point, Some(attrs_ref)) };
+                        ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes));
 
                         // Invert transform
                         let inverse = transform.copy();
