@@ -4,13 +4,16 @@
 //! It creates a fullscreen overlay window that captures the screen and displays
 //! a magnified view of the pixels around the cursor.
 
+// Suppress deprecation warnings for legacy cocoa/objc crate usage during migration
+#![allow(deprecated)]
+
 // =============================================================================
 // IMPORTS
 // =============================================================================
 
 // Cocoa framework bindings for macOS GUI (minimal legacy usage)
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSRect as NSRectLegacy, NSString as NSStringLegacy};
+use cocoa::foundation::NSRect as NSRectLegacy;
 
 // Objective-C runtime bindings for low-level messaging (legacy)
 use objc::{class, msg_send, sel, sel_impl};
@@ -19,7 +22,7 @@ use objc::runtime::{Object, Sel};
 
 // objc2 imports for modern Objective-C bindings
 use objc2::rc::Retained;
-use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, NSRect, NSSize};
+use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, NSRect, NSSize, NSString};
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
     NSApplication, 
@@ -648,26 +651,28 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
                         let char_x = center_x + radius * angle.cos();
                         let char_y = center_y + radius * angle.sin();
 
-                        // Create NSString for the character
+                        // Create NSString for the character using objc2
                         let char_str = c.to_string();
+                        let ns_char = NSString::from_str(&char_str);
                         
-                        // Create attributes dictionary (still using legacy for complex dict creation)
-                        let ns_char_legacy = NSStringLegacy::alloc(nil);
-                        let ns_char_legacy = NSStringLegacy::init_str(ns_char_legacy, &char_str);
+                        // Create attribute keys using objc2
+                        let font_attr_key = NSString::from_str("NSFont");
+                        let color_attr_key = NSString::from_str("NSColor");
 
+                        // Create attributes dictionary
+                        // Convert objc2 types to raw pointers for legacy msg_send!
                         let dict_cls = class!(NSDictionary);
-                        let font_attr_key = NSStringLegacy::alloc(nil);
-                        let font_attr_key = NSStringLegacy::init_str(font_attr_key, "NSFont");
-                        let color_attr_key = NSStringLegacy::alloc(nil);
-                        let color_attr_key = NSStringLegacy::init_str(color_attr_key, "NSColor");
-
                         let text_color_ptr: *const NSColor = &*text_color;
-                        let keys: [id; 2] = [font_attr_key, color_attr_key];
+                        let ns_char_ptr: id = &*ns_char as *const NSString as id;
+                        let font_key_ptr: id = &*font_attr_key as *const NSString as id;
+                        let color_key_ptr: id = &*color_attr_key as *const NSString as id;
+                        
+                        let keys: [id; 2] = [font_key_ptr, color_key_ptr];
                         let values: [id; 2] = [font, text_color_ptr as id];
 
                         let attributes: id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
 
-                        let char_size: NSSize = msg_send![ns_char_legacy, sizeWithAttributes: attributes];
+                        let char_size: NSSize = msg_send![ns_char_ptr, sizeWithAttributes: attributes];
 
                         // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
@@ -678,8 +683,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectLegacy) {
 
                         transform.concat();
 
-                        let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
-                        let _: () = msg_send![ns_char_legacy, drawAtPoint:draw_point withAttributes:attributes];
+                        let draw_point = NSPoint::new(-char_size.width, -char_size.height);
+                        let _: () = msg_send![ns_char_ptr, drawAtPoint:draw_point withAttributes:attributes];
 
                         // Invert transform
                         let inverse = transform.copy();
