@@ -18,6 +18,7 @@ use objc::runtime::{Object, Sel, BOOL};
 
 // objc2 imports for modern Objective-C bindings
 use objc2::rc::Retained;
+use objc2::ClassType;
 use objc2_foundation::{MainThreadMarker, NSAffineTransform, NSCopying, NSPoint, NSRect, NSSize, NSString};
 use objc2_app_kit::{
     NSAffineTransformNSAppKitAdditions,
@@ -29,6 +30,7 @@ use objc2_app_kit::{
     NSEvent,
     NSEventModifierFlags,
     NSGraphicsContext,
+    NSStringDrawing,
     NSView, 
     NSWindow as NSWindow2,
     NSWindowStyleMask,
@@ -274,7 +276,9 @@ pub fn run() -> Option<(u8, u8, u8)> {
 // =============================================================================
 
 fn register_view_class() -> &'static objc::runtime::Class {
-    let superclass = class!(NSView);
+    // Get NSView class via objc2 and convert to objc runtime class
+    let superclass_ptr = NSView::class() as *const objc2::runtime::AnyClass as *const objc::runtime::Class;
+    let superclass = unsafe { &*superclass_ptr };
     let mut decl = ClassDecl::new("ColorPickerView", superclass).unwrap();
 
     unsafe {
@@ -290,7 +294,9 @@ fn register_view_class() -> &'static objc::runtime::Class {
 }
 
 fn register_window_class() -> &'static objc::runtime::Class {
-    let superclass = class!(NSWindow);
+    // Get NSWindow class via objc2 and convert to objc runtime class
+    let superclass_ptr = NSWindow2::class() as *const objc2::runtime::AnyClass as *const objc::runtime::Class;
+    let superclass = unsafe { &*superclass_ptr };
     let mut decl = ClassDecl::new("KeyableWindow", superclass).unwrap();
 
     unsafe {
@@ -316,24 +322,30 @@ fn stop_application() {
     }
     
     // Get the shared application and stop it
-    // We need to post a dummy event to break out of the run loop
-    unsafe {
-        let app: Id = msg_send![class!(NSApplication), sharedApplication];
-        let _: () = msg_send![app, stop:null_mut::<Object>()];
+    // We need MainThreadMarker - this function is always called from the main thread
+    if let Some(mtm) = MainThreadMarker::new() {
+        let app = NSApplication::sharedApplication(mtm);
+        unsafe {
+            app.stop(None);
+        }
         
         // Create and post a dummy event to ensure the run loop exits
-        let dummy_event: Id = msg_send![class!(NSEvent), 
-            otherEventWithType:15u64  // NSEventTypeApplicationDefined
-            location:NSPoint::new(0.0, 0.0)
-            modifierFlags:0u64
-            timestamp:0.0f64
-            windowNumber:0i64
-            context:null_mut::<Object>()
-            subtype:0i16
-            data1:0i64
-            data2:0i64
-        ];
-        let _: () = msg_send![app, postEvent:dummy_event atStart:YES];
+        // Convert app to raw pointer for legacy msg_send!
+        let app_ptr: Id = &*app as *const NSApplication as Id;
+        unsafe {
+            let dummy_event: Id = msg_send![class!(NSEvent), 
+                otherEventWithType:15u64  // NSEventTypeApplicationDefined
+                location:NSPoint::new(0.0, 0.0)
+                modifierFlags:0u64
+                timestamp:0.0f64
+                windowNumber:0i64
+                context:null_mut::<Object>()
+                subtype:0i16
+                data1:0i64
+                data2:0i64
+            ];
+            let _: () = msg_send![app_ptr, postEvent:dummy_event atStart:YES];
+        }
     }
 }
 
@@ -394,10 +406,9 @@ extern "C" fn mouse_moved(_this: &Object, _cmd: Sel, event: Id) {
                 });
             }
 
-            // Request redraw using legacy API (view is still legacy)
-            unsafe {
-                let _: () = msg_send![_this, setNeedsDisplay: YES];
-            }
+            // Request redraw using objc2
+            let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+            unsafe { view_ref.setNeedsDisplay(true) };
         }
     }
 }
@@ -415,10 +426,9 @@ extern "C" fn scroll_wheel(_this: &Object, _cmd: Sel, event: Id) {
             *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         }
 
-        // Request redraw using legacy API
-        unsafe {
-            let _: () = msg_send![_this, setNeedsDisplay: YES];
-        }
+        // Request redraw using objc2
+        let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+        unsafe { view_ref.setNeedsDisplay(true) };
     }
 }
 
@@ -499,14 +509,17 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
             let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
 
             if let Ok(mut state) = MOUSE_STATE.lock() {
-                // Get window and screen info using legacy API (still needed for view)
-                unsafe {
-                    let window: Id = msg_send![_this, window];
+                // Get window and screen info using objc2
+                let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+                if let Some(window) = view_ref.window() {
                     let screen_point = NSPoint::new(new_x, cocoa_y);
-                    let window_point: NSPoint = msg_send![window, convertPointFromScreen: screen_point];
+                    let window_point: NSPoint = unsafe { window.convertPointFromScreen(screen_point) };
 
-                    let screen: Id = msg_send![window, screen];
-                    let scale_factor: f64 = msg_send![screen, backingScaleFactor];
+                    let scale_factor: f64 = if let Some(screen) = window.screen() {
+                        screen.backingScaleFactor()
+                    } else {
+                        1.0
+                    };
 
                     *state = Some(MouseColorInfo {
                         x: window_point.x,
@@ -522,10 +535,9 @@ extern "C" fn key_down(_this: &Object, _cmd: Sel, event: Id) {
                 }
             }
 
-            // Request redraw
-            unsafe {
-                let _: () = msg_send![_this, setNeedsDisplay: YES];
-            }
+            // Request redraw using objc2
+            let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+            unsafe { view_ref.setNeedsDisplay(true) };
         }
     }
 }
@@ -541,8 +553,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
     };
     unsafe { overlay_color.set() };
     
-    // Get bounds and fill with overlay color using NSBezierPath
-    let bounds: NSRect = unsafe { msg_send![_this, bounds] };
+    // Get bounds using objc2 and fill with overlay color
+    let view_ref: &NSView = unsafe { &*(_this as *const Object as *const NSView) };
+    let bounds: NSRect = view_ref.bounds();
     let bounds_path = unsafe { NSBezierPath::bezierPathWithRect(bounds) };
     unsafe { bounds_path.fill() };
 
@@ -604,8 +617,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                     );
                     let circular_clip = NSBezierPath::bezierPathWithOvalInRect(mag_rect2);
 
-                    // Save graphics state (use legacy - objc2 method is instance method)
-                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+                    // Save graphics state using objc2
+                    NSGraphicsContext::saveGraphicsState_class();
 
                     if let Some(graphics_context) = NSGraphicsContext::currentContext() {
                         graphics_context.setImageInterpolation(objc2_app_kit::NSImageInterpolation::None);
@@ -623,8 +636,8 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                                           operation:2u64
                                           fraction:1.0];
 
-                    // Restore graphics state
-                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+                    // Restore graphics state using objc2
+                    NSGraphicsContext::restoreGraphicsState_class();
 
                     // Draw reticle
                     let actual_pixels = use_width;
@@ -693,7 +706,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                     let total_arc = angle_step * (char_count - 1.0);
                     let start_angle: f64 = std::f64::consts::PI / 2.0 + total_arc / 2.0;
 
-                    let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+                    NSGraphicsContext::saveGraphicsState_class();
 
                     for (i, c) in hex_text.chars().enumerate() {
                         let angle = start_angle - angle_step * (i as f64);
@@ -709,20 +722,24 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         let font_attr_key = NSString::from_str("NSFont");
                         let color_attr_key = NSString::from_str("NSColor");
 
-                        // Create attributes dictionary
-                        // Convert objc2 types to raw pointers for legacy msg_send!
+                        // Create attributes dictionary using legacy msg_send (objc2 NSDictionary::from_vec requires Retained values)
                         let dict_cls = class!(NSDictionary);
-                        let text_color_ptr = &*text_color as *const NSColor as Id;
-                        let ns_char_ptr: Id = &*ns_char as *const NSString as Id;
                         let font_key_ptr: Id = &*font_attr_key as *const NSString as Id;
                         let color_key_ptr: Id = &*color_attr_key as *const NSString as Id;
+                        let text_color_ptr: Id = &*text_color as *const NSColor as Id;
                         
                         let keys: [Id; 2] = [font_key_ptr, color_key_ptr];
                         let values: [Id; 2] = [font, text_color_ptr];
 
                         let attributes: Id = msg_send![dict_cls, dictionaryWithObjects: values.as_ptr() forKeys: keys.as_ptr() count: 2usize];
+                        
+                        // Convert to objc2 NSDictionary reference for use with NSStringDrawing
+                        use objc2_foundation::NSDictionary;
+                        use objc2::runtime::AnyObject;
+                        let attrs_ref: &NSDictionary<NSString, AnyObject> = unsafe { &*(attributes as *const NSDictionary<_, _>) };
 
-                        let char_size: NSSize = msg_send![ns_char_ptr, sizeWithAttributes: attributes];
+                        // Get character size using objc2 NSStringDrawing
+                        let char_size: NSSize = unsafe { ns_char.sizeWithAttributes(Some(attrs_ref)) };
 
                         // Use objc2 for NSAffineTransform
                         let transform = NSAffineTransform::transform();
@@ -733,8 +750,9 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
 
                         transform.concat();
 
+                        // Draw the character using objc2 NSStringDrawing trait
                         let draw_point = NSPoint::new(-char_size.width, -char_size.height);
-                        let _: () = msg_send![ns_char_ptr, drawAtPoint:draw_point withAttributes:attributes];
+                        unsafe { ns_char.drawAtPoint_withAttributes(draw_point, Some(attrs_ref)) };
 
                         // Invert transform
                         let inverse = transform.copy();
@@ -742,7 +760,7 @@ extern "C" fn draw_rect(_this: &Object, _cmd: Sel, _rect: NSRectEncode) {
                         inverse.concat();
                     }
 
-                    let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+                    NSGraphicsContext::restoreGraphicsState_class();
                 }
             }
         }
