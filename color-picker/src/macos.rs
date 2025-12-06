@@ -420,13 +420,27 @@ static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
 
 /// Stocke la couleur finale sélectionnée quand l'utilisateur clique ou appuie Entrée
+/// Stores the final selected color when user clicks or presses Enter
 static SELECTED_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
 
 /// Mode d'affichage: true = arc du haut (foreground), false = arc du bas (background)
 /// Display mode: true = top arc (foreground), false = bottom arc (background)
 static FG_MODE: Mutex<bool> = Mutex::new(true);
 
+/// Structure de résultat du color picker avec foreground et background séparés
+/// Result structure for color picker with separate foreground and background
+#[derive(Debug, Clone)]
+pub struct ColorPickerResult {
+    /// Couleur de premier plan (si fg=true lors de l'appel)
+    /// Foreground color (if fg=true when called)
+    pub foreground: Option<(u8, u8, u8)>,
+    /// Couleur d'arrière-plan (si fg=false lors de l'appel)
+    /// Background color (if fg=false when called)
+    pub background: Option<(u8, u8, u8)>,
+}
+
 /// Structure contenant toutes les informations sur la position et la couleur actuelles
+/// Structure containing all information about current position and color
 struct MouseColorInfo {
     x: f64,          // Position X dans les coordonnées de la fenêtre
     y: f64,          // Position Y dans les coordonnées de la fenêtre
@@ -570,11 +584,18 @@ fn stop_application() {
 }
 
 /// Exécute l'application color picker sur macOS
+/// Runs the color picker application on macOS
 ///
-/// # Retourne
-/// * `Some((r, g, b))` - La couleur RGB sélectionnée si l'utilisateur a cliqué ou appuyé Entrée
-/// * `None` - Si l'utilisateur a appuyé ESC pour annuler
-pub fn run(fg: bool) -> Option<(u8, u8, u8)> {
+/// # Arguments
+/// * `fg` - Si true, stocke la couleur dans foreground. Si false, stocke dans background.
+/// * `fg` - If true, stores color in foreground. If false, stores in background.
+///
+/// # Retourne / Returns
+/// * `ColorPickerResult` avec foreground ou background rempli selon le paramètre fg
+/// * `ColorPickerResult` with foreground or background filled based on fg parameter
+/// * Les deux champs sont None si l'utilisateur a appuyé ESC pour annuler
+/// * Both fields are None if user pressed ESC to cancel
+pub fn run(fg: bool) -> ColorPickerResult {
     // Stocke le mode fg dans la variable globale
     // Store the fg mode in the global variable
     if let Ok(mut mode) = FG_MODE.lock() {
@@ -582,8 +603,9 @@ pub fn run(fg: bool) -> Option<(u8, u8, u8)> {
     }
 
     // Réinitialise la couleur sélectionnée
+    // Reset the selected color
     if let Ok(mut color) = SELECTED_COLOR.lock() {
-        *color = None;
+        *color = None; // Clear any previously selected color
     }
 
     // Récupère le marqueur de thread principal - requis pour les opérations UI
@@ -693,13 +715,37 @@ pub fn run(fg: bool) -> Option<(u8, u8, u8)> {
     NSCursor::hide();
 
     // Lance la boucle d'événements (bloque jusqu'à stop())
+    // Run the event loop (blocks until stop())
     app.run();
 
-    // Retourne la couleur sélectionnée (si elle existe)
-    if let Ok(color) = SELECTED_COLOR.lock() {
-        color.clone()
+    // Récupère la couleur sélectionnée et construit le résultat
+    // Get the selected color and build the result
+    let selected = if let Ok(color) = SELECTED_COLOR.lock() {
+        color.clone() // Clone the Option<(u8, u8, u8)>
     } else {
-        None
+        None // Return None if lock fails
+    };
+
+    // Récupère le mode fg pour savoir où stocker la couleur
+    // Get the fg mode to know where to store the color
+    let is_fg = if let Ok(mode) = FG_MODE.lock() {
+        *mode // Copy the boolean value
+    } else {
+        true // Default to foreground if lock fails
+    };
+
+    // Construit le résultat avec foreground ou background selon le mode
+    // Build the result with foreground or background based on mode
+    if is_fg {
+        ColorPickerResult {
+            foreground: selected, // Store color in foreground
+            background: None,     // Background is None
+        }
+    } else {
+        ColorPickerResult {
+            foreground: None,     // Foreground is None
+            background: selected, // Store color in background
+        }
     }
 }
 
