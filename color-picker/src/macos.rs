@@ -911,6 +911,62 @@ pub fn run(fg: bool) -> ColorPickerResult {
         running_app.activateWithOptions(NSApplicationActivationOptions::empty());
     }
 
+    // Initialise MOUSE_STATE avec la position actuelle de la souris
+    // Initialize MOUSE_STATE with the current mouse position
+    {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+        
+        // Récupère la position actuelle de la souris via Core Graphics
+        // Get current mouse position via Core Graphics
+        if let Ok(source) = CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+            let cg_event = CGEvent::new(source);
+            if let Ok(event) = cg_event {
+                let cg_point = event.location();
+                
+                // Convertit les coordonnées CG (origine en haut) vers Cocoa (origine en bas)
+                // Convert CG coordinates (origin at top) to Cocoa (origin at bottom)
+                let main_display = CGDisplay::main();
+                let screen_height = main_display.pixels_high() as f64;
+                let cocoa_x = cg_point.x;
+                let cocoa_y = screen_height - cg_point.y;
+                
+                // Récupère la couleur du pixel à cette position
+                // Get the pixel color at this position
+                if let Some((r, g, b)) = get_pixel_color(cocoa_x, cocoa_y) {
+                    let r_int = (r * 255.0) as u8;
+                    let g_int = (g * 255.0) as u8;
+                    let b_int = (b * 255.0) as u8;
+                    let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+                    
+                    // Récupère le scale factor de l'écran principal
+                    // Get the scale factor of the main screen
+                    let scale_factor = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                        main_screen.backingScaleFactor()
+                    } else {
+                        2.0 // Default to Retina
+                    };
+                    
+                    // Initialise MOUSE_STATE
+                    // Initialize MOUSE_STATE
+                    if let Ok(mut state) = MOUSE_STATE.lock() {
+                        *state = Some(MouseColorInfo {
+                            x: cocoa_x,        // Position X dans les coordonnées de la fenêtre
+                            y: cocoa_y,        // Position Y dans les coordonnées de la fenêtre
+                            screen_x: cocoa_x, // Position X dans les coordonnées de l'écran
+                            screen_y: cocoa_y, // Position Y dans les coordonnées de l'écran
+                            r: r_int,
+                            g: g_int,
+                            b: b_int,
+                            hex_color,
+                            scale_factor,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // Cache le curseur de la souris
     NSCursor::hide();
 
@@ -1138,15 +1194,13 @@ fn draw_view(view: &NSView) {
                     // Dessine le réticule central
                     // Draw the central reticle
                     // -------------------------------------------------------------
-                    // Centre de la loupe (basé sur mag_size qui change avec captured_pixels)
-                    // Center of the magnifier (based on mag_size which changes with captured_pixels)
+                    // Centre de la loupe
+                    // Center of the magnifier
                     let center_x = mag_x + mag_size / 2.0;
                     let center_y = mag_y + mag_size / 2.0;
 
                     // Taille du réticule: FIXE, basée uniquement sur current_zoom
-                    // Cette taille ne doit PAS dépendre de captured_pixels ou mag_size
                     // Reticle size: FIXED, based only on current_zoom
-                    // This size must NOT depend on captured_pixels or mag_size
                     let reticle_size = current_zoom;
                     let half_reticle = reticle_size / 2.0;
 
