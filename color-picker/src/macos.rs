@@ -280,9 +280,11 @@ define_class!(
         // scrollWheel: - Handles scroll wheel
         // ---------------------------------------------------------------------
         /// Appelé quand l'utilisateur utilise la molette de défilement
-        /// Ajuste le niveau de zoom de la loupe
+        /// Sans Shift: ajuste le niveau de zoom
+        /// Avec Shift: ajuste le nombre de pixels capturés
         /// Called when the user uses the scroll wheel
-        /// Adjusts the magnifier zoom level
+        /// Without Shift: adjusts zoom level
+        /// With Shift: adjusts captured pixels count
         #[unsafe(method(scrollWheel:))]
         fn scroll_wheel(&self, event: &NSEvent) {
             // Get the vertical delta of the scroll wheel
@@ -290,15 +292,35 @@ define_class!(
 
             // If the wheel moved
             if delta_y != 0.0 {
-                // Lock the zoom mutex
-                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
-                    // Calculate new zoom by adding delta * zoom step
-                    let new_zoom = *zoom + delta_y * ZOOM_STEP;
-                    // Clamp zoom between ZOOM_MIN and ZOOM_MAX
-                    *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+                // Get modifier flags to check for Shift
+                // Récupère les modificateurs pour vérifier Shift
+                let modifier_flags: NSEventModifierFlags = event.modifierFlags();
+                let shift_pressed = modifier_flags.contains(NSEventModifierFlags::Shift);
+
+                if shift_pressed {
+                    // Shift + molette: ajuste le nombre de pixels capturés
+                    // Shift + wheel: adjust captured pixels count
+                    if let Ok(mut pixels) = CURRENT_CAPTURED_PIXELS.lock() {
+                        // Calcule la nouvelle valeur (direction inversée pour UX intuitive)
+                        // Calculate new value (inverted direction for intuitive UX)
+                        let direction = if delta_y > 0.0 { 1.0 } else { -1.0 };
+                        let new_pixels = *pixels + direction * CAPTURED_PIXELS_STEP;
+                        // Clamp entre min et max
+                        // Clamp between min and max
+                        *pixels = new_pixels.clamp(CAPTURED_PIXELS_MIN, CAPTURED_PIXELS_MAX);
+                    }
+                } else {
+                    // Molette seule: ajuste le zoom
+                    // Wheel alone: adjust zoom
+                    if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                        // Calculate new zoom by adding delta * zoom step
+                        let new_zoom = *zoom + delta_y * ZOOM_STEP;
+                        // Clamp zoom between ZOOM_MIN and ZOOM_MAX
+                        *zoom = new_zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+                    }
                 }
 
-                // Request a refresh to display the new zoom
+                // Request a refresh to display the change
                 self.setNeedsDisplay(true);
             }
         }
@@ -365,19 +387,39 @@ define_class!(
                 // Demande un rafraîchissement pour mettre à jour l'affichage
                 self.setNeedsDisplay(true);
             } else if key_code == 34 {
-                // I key - Zoom in (increase zoom)
-                // Touche I - Zoom avant (augmente le zoom)
-                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
-                    *zoom = (*zoom + ZOOM_STEP).min(ZOOM_MAX); // Increase zoom, clamp to max
+                // I key - Zoom in or increase captured pixels
+                // Touche I - Zoom avant ou augmente les pixels capturés
+                if shift_pressed {
+                    // Shift+I: augmente le nombre de pixels capturés
+                    // Shift+I: increase captured pixels count
+                    if let Ok(mut pixels) = CURRENT_CAPTURED_PIXELS.lock() {
+                        *pixels = (*pixels + CAPTURED_PIXELS_STEP).min(CAPTURED_PIXELS_MAX);
+                    }
+                } else {
+                    // I seul: zoom avant
+                    // I alone: zoom in
+                    if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                        *zoom = (*zoom + ZOOM_STEP).min(ZOOM_MAX);
+                    }
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
                 self.setNeedsDisplay(true);
             } else if key_code == 31 {
-                // O key - Zoom out (decrease zoom)
-                // Touche O - Zoom arrière (diminue le zoom)
-                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
-                    *zoom = (*zoom - ZOOM_STEP).max(ZOOM_MIN); // Decrease zoom, clamp to min
+                // O key - Zoom out or decrease captured pixels
+                // Touche O - Zoom arrière ou diminue les pixels capturés
+                if shift_pressed {
+                    // Shift+O: diminue le nombre de pixels capturés
+                    // Shift+O: decrease captured pixels count
+                    if let Ok(mut pixels) = CURRENT_CAPTURED_PIXELS.lock() {
+                        *pixels = (*pixels - CAPTURED_PIXELS_STEP).max(CAPTURED_PIXELS_MIN);
+                    }
+                } else {
+                    // O seul: zoom arrière
+                    // O alone: zoom out
+                    if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                        *zoom = (*zoom - ZOOM_STEP).max(ZOOM_MIN);
+                    }
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
@@ -524,6 +566,24 @@ static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 /// État global pour le niveau de zoom actuel
 /// Initialisé avec le facteur de zoom par défaut
 static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
+
+/// État global pour le nombre de pixels capturés
+/// Initialisé avec la valeur par défaut de config
+/// Global state for captured pixels count
+/// Initialized with default value from config
+static CURRENT_CAPTURED_PIXELS: Mutex<f64> = Mutex::new(CAPTURED_PIXELS);
+
+/// Nombre minimum de pixels capturés (doit être impair)
+/// Minimum captured pixels (must be odd)
+const CAPTURED_PIXELS_MIN: f64 = 9.0;
+
+/// Nombre maximum de pixels capturés (doit être impair)
+/// Maximum captured pixels (must be odd)
+const CAPTURED_PIXELS_MAX: f64 = 21.0;
+
+/// Pas d'incrément pour les pixels capturés (2 pour rester impair)
+/// Increment step for captured pixels (2 to stay odd)
+const CAPTURED_PIXELS_STEP: f64 = 2.0;
 
 /// Stocke la couleur de premier plan sélectionnée (foreground)
 /// Stores the selected foreground color
@@ -736,6 +796,18 @@ pub fn run(fg: bool) -> ColorPickerResult {
         *mode = false; // Disable continue mode at start
     }
 
+    // Réinitialise le nombre de pixels capturés à la valeur par défaut
+    // Reset captured pixels to default value
+    if let Ok(mut pixels) = CURRENT_CAPTURED_PIXELS.lock() {
+        *pixels = CAPTURED_PIXELS; // Reset to default from config
+    }
+
+    // Réinitialise le zoom à la valeur par défaut
+    // Reset zoom to default value
+    if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+        *zoom = INITIAL_ZOOM_FACTOR; // Reset to default from config
+    }
+
     // Récupère le marqueur de thread principal - requis pour les opérations UI
     let mtm = MainThreadMarker::new().expect("Must be called from main thread");
 
@@ -916,18 +988,25 @@ fn draw_view(view: &NSView) {
                 Err(_) => INITIAL_ZOOM_FACTOR,
             };
 
+            // Récupère le nombre de pixels capturés actuel
+            // Get the current captured pixels count
+            let captured_pixels = match CURRENT_CAPTURED_PIXELS.lock() {
+                Ok(p) => *p,
+                Err(_) => CAPTURED_PIXELS, // Fallback to default constant
+            };
+
             // Calcule la taille de la loupe à afficher
             // mag_size = nombre de pixels capturés × facteur de zoom
-            let mag_size = CAPTURED_PIXELS * current_zoom;
+            let mag_size = captured_pixels * current_zoom;
             // Taille de capture ajustée pour le facteur d'échelle Retina
-            let capture_size = CAPTURED_PIXELS / info.scale_factor;
+            let capture_size = captured_pixels / info.scale_factor;
 
             // Capture la zone de pixels autour du curseur
             if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_size) {
                 // Dimensions de l'image capturée
                 let img_width = cg_image.width() as f64;
                 let img_height = cg_image.height() as f64;
-                let target_pixels = CAPTURED_PIXELS;
+                let target_pixels = captured_pixels;
 
                 // Calcule le décalage pour centrer le recadrage
                 let crop_x = if img_width > target_pixels {
@@ -1057,39 +1136,46 @@ fn draw_view(view: &NSView) {
 
                     // -------------------------------------------------------------
                     // Dessine le réticule central
+                    // Draw the central reticle
                     // -------------------------------------------------------------
-                    let actual_pixels = use_width;
-                    // Taille d'un pixel affiché dans la loupe
-                    let pixel_size = mag_size / actual_pixels;
-
-                    // Centre de la loupe
+                    // Centre de la loupe (basé sur mag_size qui change avec captured_pixels)
+                    // Center of the magnifier (based on mag_size which changes with captured_pixels)
                     let center_x = mag_x + mag_size / 2.0;
                     let center_y = mag_y + mag_size / 2.0;
 
-                    // Décalage pour les grilles paires (centre entre 4 pixels)
-                    let offset = if (actual_pixels as i32) % 2 == 0 {
-                        pixel_size / 2.0
-                    } else {
-                        0.0
-                    };
-                    let reticle_center_x = center_x + offset;
-                    let reticle_center_y = center_y + offset;
+                    // Taille du réticule: FIXE, basée uniquement sur current_zoom
+                    // Cette taille ne doit PAS dépendre de captured_pixels ou mag_size
+                    // Reticle size: FIXED, based only on current_zoom
+                    // This size must NOT depend on captured_pixels or mag_size
+                    let reticle_size = current_zoom;
+                    let half_reticle = reticle_size / 2.0;
 
-                    // Rectangle du réticule (1 pixel)
-                    let half_pixel = pixel_size / 2.0;
+                    // Le réticule est toujours centré dans la loupe
+                    // The reticle is always centered in the magnifier
+                    let reticle_center_x = center_x;
+                    let reticle_center_y = center_y;
+
+                    // Rectangle du réticule
+                    // Reticle rectangle
                     let square_rect = NSRect::new(
-                        NSPoint::new(reticle_center_x - half_pixel, reticle_center_y - half_pixel),
-                        NSSize::new(pixel_size, pixel_size)
+                        NSPoint::new(reticle_center_x - half_reticle, reticle_center_y - half_reticle),
+                        NSSize::new(reticle_size, reticle_size)
                     );
 
                     // Couleur grise pour le réticule
+                    // Gray color for the reticle
                     let gray_color = NSColor::colorWithCalibratedRed_green_blue_alpha(0.5, 0.5, 0.5, 1.0);
                     gray_color.setStroke();
 
                     // Dessine le carré du réticule
+                    // Draw the reticle square
                     let reticle_path = NSBezierPath::bezierPathWithRect(square_rect);
                     reticle_path.setLineWidth(1.0);
                     reticle_path.stroke();
+                    
+                    // Garde use_width pour référence si nécessaire
+                    // Keep use_width for reference if needed
+                    let _actual_pixels = use_width;
 
                     // -------------------------------------------------------------
                     // Dessine la bordure colorée (arc haut ou bas selon fg_mode)
