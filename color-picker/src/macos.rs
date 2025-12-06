@@ -132,24 +132,87 @@ define_class!(
         // mouseDown: - Handles mouse clicks
         // ---------------------------------------------------------------------
         /// Appelé quand l'utilisateur clique avec la souris
-        /// Sauvegarde la couleur actuelle et termine l'application
+        /// En mode normal: sauvegarde la couleur et termine l'application
+        /// En mode continue: sauvegarde la couleur et bascule fg/bg
         /// Called when the user clicks with the mouse
-        /// Saves the current color and terminates the application
+        /// In normal mode: saves the current color and terminates the application
+        /// In continue mode: saves the current color and toggles fg/bg
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, _event: &NSEvent) {
+            // Vérifie si le mode continue est activé
+            // Check if continue mode is enabled
+            let is_continue_mode = if let Ok(mode) = CONTINUE_MODE.lock() {
+                *mode // Copy the boolean value
+            } else {
+                false // Default to disabled if lock fails
+            };
+
+            // Récupère le mode fg actuel
+            // Get the current fg mode
+            let is_fg_mode = if let Ok(mode) = FG_MODE.lock() {
+                *mode // Copy the boolean value
+            } else {
+                true // Default to fg if lock fails
+            };
+
+            // Vérifie si la couleur opposée a déjà été sélectionnée (= on a déjà basculé)
+            // Check if the opposite color has already been selected (= we already toggled)
+            // Si fg_mode=true, on vérifie BG_COLOR. Si fg_mode=false, on vérifie FG_COLOR.
+            // If fg_mode=true, check BG_COLOR. If fg_mode=false, check FG_COLOR.
+            let has_already_toggled = if is_fg_mode {
+                // On est en mode fg, vérifie si bg a déjà été sélectionné
+                // We're in fg mode, check if bg was already selected
+                if let Ok(bg) = BG_COLOR.lock() {
+                    bg.is_some() // True if background color exists
+                } else {
+                    false
+                }
+            } else {
+                // On est en mode bg, vérifie si fg a déjà été sélectionné
+                // We're in bg mode, check if fg was already selected
+                if let Ok(fg) = FG_COLOR.lock() {
+                    fg.is_some() // True if foreground color exists
+                } else {
+                    false
+                }
+            };
+
             // Lock the mutex to access the mouse state
             if let Ok(state) = MOUSE_STATE.lock() {
                 // If we have information about the current color
                 if let Some(ref info) = *state {
-                    // Lock the selected color mutex
-                    if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                        // Save the current RGB color
-                        *selected = Some((info.r, info.g, info.b));
+                    // Stocke la couleur dans la variable appropriée selon fg_mode
+                    // Store the color in the appropriate variable based on fg_mode
+                    if is_fg_mode {
+                        // Stocke dans FG_COLOR
+                        // Store in FG_COLOR
+                        if let Ok(mut fg_color) = FG_COLOR.lock() {
+                            *fg_color = Some((info.r, info.g, info.b));
+                        }
+                    } else {
+                        // Stocke dans BG_COLOR
+                        // Store in BG_COLOR
+                        if let Ok(mut bg_color) = BG_COLOR.lock() {
+                            *bg_color = Some((info.r, info.g, info.b));
+                        }
                     }
                 }
             }
-            // Stop the application
-            stop_application();
+
+            if is_continue_mode && !has_already_toggled {
+                // Mode continue, premier clic: bascule entre fg et bg
+                // Continue mode, first click: toggle between fg and bg
+                if let Ok(mut fg_mode) = FG_MODE.lock() {
+                    *fg_mode = !*fg_mode; // Toggle fg mode
+                }
+                // Demande un rafraîchissement pour mettre à jour l'affichage
+                // Request a refresh to update the display
+                self.setNeedsDisplay(true);
+            } else {
+                // Mode normal OU mode continue après toggle: termine l'application
+                // Normal mode OR continue mode after toggle: stop the application
+                stop_application();
+            }
         }
 
         // ---------------------------------------------------------------------
@@ -266,12 +329,28 @@ define_class!(
                 // ESC - Cancel the selection
                 stop_application();
             } else if key_code == 36 {
-                // Enter - Confirm the selection
+                // Enter - Confirm the selection and exit
+                // Entrée - Confirme la sélection et quitte
+                // Récupère le mode fg actuel
+                // Get the current fg mode
+                let is_fg_mode = if let Ok(mode) = FG_MODE.lock() {
+                    *mode
+                } else {
+                    true
+                };
+
                 if let Ok(state) = MOUSE_STATE.lock() {
                     if let Some(ref info) = *state {
-                        if let Ok(mut selected) = SELECTED_COLOR.lock() {
-                            // Save the current color
-                            *selected = Some((info.r, info.g, info.b));
+                        // Stocke la couleur dans la variable appropriée selon fg_mode
+                        // Store the color in the appropriate variable based on fg_mode
+                        if is_fg_mode {
+                            if let Ok(mut fg_color) = FG_COLOR.lock() {
+                                *fg_color = Some((info.r, info.g, info.b));
+                            }
+                        } else {
+                            if let Ok(mut bg_color) = BG_COLOR.lock() {
+                                *bg_color = Some((info.r, info.g, info.b));
+                            }
                         }
                     }
                 }
@@ -428,9 +507,13 @@ static MOUSE_STATE: Mutex<Option<MouseColorInfo>> = Mutex::new(None);
 /// Initialisé avec le facteur de zoom par défaut
 static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
 
-/// Stocke la couleur finale sélectionnée quand l'utilisateur clique ou appuie Entrée
-/// Stores the final selected color when user clicks or presses Enter
-static SELECTED_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
+/// Stocke la couleur de premier plan sélectionnée (foreground)
+/// Stores the selected foreground color
+static FG_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
+
+/// Stocke la couleur d'arrière-plan sélectionnée (background)
+/// Stores the selected background color
+static BG_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
 
 /// Mode d'affichage: true = arc du haut (foreground), false = arc du bas (background)
 /// Display mode: true = top arc (foreground), false = bottom arc (background)
@@ -452,6 +535,9 @@ pub struct ColorPickerResult {
     /// Couleur d'arrière-plan (si fg=false lors de l'appel)
     /// Background color (if fg=false when called)
     pub background: Option<(u8, u8, u8)>,
+    /// Indique si le mode continue était activé
+    /// Indicates if continue mode was enabled
+    pub continue_mode: bool,
 }
 
 /// Structure contenant toutes les informations sur la position et la couleur actuelles
@@ -602,12 +688,12 @@ fn stop_application() {
 /// Runs the color picker application on macOS
 ///
 /// # Arguments
-/// * `fg` - Si true, stocke la couleur dans foreground. Si false, stocke dans background.
-/// * `fg` - If true, stores color in foreground. If false, stores in background.
+/// * `fg` - Si true, commence en mode foreground. Si false, commence en mode background.
+/// * `fg` - If true, starts in foreground mode. If false, starts in background mode.
 ///
 /// # Retourne / Returns
-/// * `ColorPickerResult` avec foreground ou background rempli selon le paramètre fg
-/// * `ColorPickerResult` with foreground or background filled based on fg parameter
+/// * `ColorPickerResult` avec foreground et/ou background remplis selon les sélections
+/// * `ColorPickerResult` with foreground and/or background filled based on selections
 /// * Les deux champs sont None si l'utilisateur a appuyé ESC pour annuler
 /// * Both fields are None if user pressed ESC to cancel
 pub fn run(fg: bool) -> ColorPickerResult {
@@ -617,10 +703,19 @@ pub fn run(fg: bool) -> ColorPickerResult {
         *mode = fg; // Set the display mode (true = top arc, false = bottom arc)
     }
 
-    // Réinitialise la couleur sélectionnée
-    // Reset the selected color
-    if let Ok(mut color) = SELECTED_COLOR.lock() {
-        *color = None; // Clear any previously selected color
+    // Réinitialise les couleurs sélectionnées
+    // Reset the selected colors
+    if let Ok(mut color) = FG_COLOR.lock() {
+        *color = None; // Clear any previously selected foreground color
+    }
+    if let Ok(mut color) = BG_COLOR.lock() {
+        *color = None; // Clear any previously selected background color
+    }
+
+    // Réinitialise le mode continue
+    // Reset the continue mode
+    if let Ok(mut mode) = CONTINUE_MODE.lock() {
+        *mode = false; // Disable continue mode at start
     }
 
     // Récupère le marqueur de thread principal - requis pour les opérations UI
@@ -733,34 +828,34 @@ pub fn run(fg: bool) -> ColorPickerResult {
     // Run the event loop (blocks until stop())
     app.run();
 
-    // Récupère la couleur sélectionnée et construit le résultat
-    // Get the selected color and build the result
-    let selected = if let Ok(color) = SELECTED_COLOR.lock() {
+    // Récupère les couleurs sélectionnées
+    // Get the selected colors
+    let fg_color = if let Ok(color) = FG_COLOR.lock() {
         color.clone() // Clone the Option<(u8, u8, u8)>
     } else {
         None // Return None if lock fails
     };
 
-    // Récupère le mode fg pour savoir où stocker la couleur
-    // Get the fg mode to know where to store the color
-    let is_fg = if let Ok(mode) = FG_MODE.lock() {
-        *mode // Copy the boolean value
+    let bg_color = if let Ok(color) = BG_COLOR.lock() {
+        color.clone() // Clone the Option<(u8, u8, u8)>
     } else {
-        true // Default to foreground if lock fails
+        None // Return None if lock fails
     };
 
-    // Construit le résultat avec foreground ou background selon le mode
-    // Build the result with foreground or background based on mode
-    if is_fg {
-        ColorPickerResult {
-            foreground: selected, // Store color in foreground
-            background: None,     // Background is None
-        }
+    // Récupère l'état du mode continue
+    // Get the continue mode state
+    let was_continue_mode = if let Ok(mode) = CONTINUE_MODE.lock() {
+        *mode // Copy the boolean value
     } else {
-        ColorPickerResult {
-            foreground: None,     // Foreground is None
-            background: selected, // Store color in background
-        }
+        false // Default to false if lock fails
+    };
+
+    // Construit le résultat avec les deux couleurs et le mode continue
+    // Build the result with both colors and continue mode
+    ColorPickerResult {
+        foreground: fg_color,       // Foreground color (may be None)
+        background: bg_color,       // Background color (may be None)
+        continue_mode: was_continue_mode, // Whether continue mode was enabled
     }
 }
 
