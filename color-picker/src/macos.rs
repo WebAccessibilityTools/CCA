@@ -324,7 +324,7 @@ define_class!(
             // Determine movement distance (50px if Shift, 1px otherwise)
             let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
 
-            // Key codes: ESC = 53, Enter/Return = 36, C = 8
+            // Key codes: ESC = 53, Enter/Return = 36, C = 8, I = 34, O = 31
             if key_code == 53 {
                 // ESC - Cancel the selection
                 stop_application();
@@ -360,6 +360,24 @@ define_class!(
                 // Touche C - Bascule le mode continue
                 if let Ok(mut continue_mode) = CONTINUE_MODE.lock() {
                     *continue_mode = !*continue_mode; // Toggle the mode
+                }
+                // Request a refresh to update the display
+                // Demande un rafraîchissement pour mettre à jour l'affichage
+                self.setNeedsDisplay(true);
+            } else if key_code == 34 {
+                // I key - Zoom in (increase zoom)
+                // Touche I - Zoom avant (augmente le zoom)
+                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                    *zoom = (*zoom + ZOOM_STEP).min(ZOOM_MAX); // Increase zoom, clamp to max
+                }
+                // Request a refresh to update the display
+                // Demande un rafraîchissement pour mettre à jour l'affichage
+                self.setNeedsDisplay(true);
+            } else if key_code == 31 {
+                // O key - Zoom out (decrease zoom)
+                // Touche O - Zoom arrière (diminue le zoom)
+                if let Ok(mut zoom) = CURRENT_ZOOM.lock() {
+                    *zoom = (*zoom - ZOOM_STEP).max(ZOOM_MIN); // Decrease zoom, clamp to min
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
