@@ -4,14 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Cocoa framework bindings for macOS GUI
-# Provides NSApplication, NSWindow, NSView, etc.
-cocoa = "0.26"
 
-# Objective-C runtime bindings
-# Provides msg_send! macro for calling Objective-C methods
-objc = "0.2"
 
+# macOS dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
 # Core Graphics bindings for screen capture
 # Provides CGDisplay, CGImage for capturing screen pixels
+# Note: We keep this crate because objc2-core-graphics doesn't have all the
+# high-level APIs we need for screen capture (CGDisplayCreateImage, etc.)
 core-graphics = "0.23"
+
+# Modern Objective-C runtime bindings (objc2 ecosystem)
+# Type-safe API for Objective-C interop
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSThread", "NSArray", "NSEnumerator", "NSAffineTransform", "NSObject", "NSDictionary"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSWindow", 
+    "NSScreen", 
+    "NSEvent", 
+    "NSView", 
+    "NSResponder", 
+    "NSGraphicsContext", 
+    "NSColor", 
+    "NSApplication", 
+    "NSRunningApplication", 
+    "NSImage", 
+    "NSBezierPath", 
+    "NSAffineTransform", 
+    "NSCursor",
+    "NSFont",
+    "NSStringDrawing"
+] }
