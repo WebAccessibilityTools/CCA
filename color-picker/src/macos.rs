@@ -422,6 +422,10 @@ static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
 /// Stocke la couleur finale sélectionnée quand l'utilisateur clique ou appuie Entrée
 static SELECTED_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
 
+/// Mode d'affichage: true = arc du haut (foreground), false = arc du bas (background)
+/// Display mode: true = top arc (foreground), false = bottom arc (background)
+static FG_MODE: Mutex<bool> = Mutex::new(true);
+
 /// Structure contenant toutes les informations sur la position et la couleur actuelles
 struct MouseColorInfo {
     x: f64,          // Position X dans les coordonnées de la fenêtre
@@ -570,7 +574,13 @@ fn stop_application() {
 /// # Retourne
 /// * `Some((r, g, b))` - La couleur RGB sélectionnée si l'utilisateur a cliqué ou appuyé Entrée
 /// * `None` - Si l'utilisateur a appuyé ESC pour annuler
-pub fn run() -> Option<(u8, u8, u8)> {
+pub fn run(fg: bool) -> Option<(u8, u8, u8)> {
+    // Stocke le mode fg dans la variable globale
+    // Store the fg mode in the global variable
+    if let Ok(mut mode) = FG_MODE.lock() {
+        *mode = fg; // Set the display mode (true = top arc, false = bottom arc)
+    }
+
     // Réinitialise la couleur sélectionnée
     if let Ok(mut color) = SELECTED_COLOR.lock() {
         *color = None;
@@ -908,74 +918,150 @@ fn draw_view(view: &NSView) {
                     reticle_path.stroke();
 
                     // -------------------------------------------------------------
-                    // Dessine la bordure colorée
+                    // Dessine la bordure colorée (arc haut ou bas selon fg_mode)
+                    // Draw the colored border (top or bottom arc based on fg_mode)
                     // -------------------------------------------------------------
                     // Parse la couleur hex
-                    let hex = &info.hex_color[1..]; // Enlève le #
-                    let r_val = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0;
-                    let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
-                    let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
+                    let hex = &info.hex_color[1..]; // Enlève le # / Remove the #
+                    let r_val = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0; // Red component
+                    let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0; // Green component
+                    let b_val = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0; // Blue component
 
-                    // Rectangle pour la bordure (légèrement plus grand que la loupe)
-                    let border_rect = NSRect::new(
-                        NSPoint::new(mag_x - BORDER_WIDTH / 2.0, mag_y - BORDER_WIDTH / 2.0),
-                        NSSize::new(mag_size + BORDER_WIDTH, mag_size + BORDER_WIDTH)
-                    );
+                    // Récupère le mode fg depuis la variable globale
+                    // Get the fg mode from the global variable
+                    let fg_mode = if let Ok(mode) = FG_MODE.lock() {
+                        *mode // Copy the boolean value
+                    } else {
+                        true // Default to top arc if lock fails
+                    };
+
+                    // Rayon du cercle de bordure (centre de l'épaisseur de la bordure)
+                    // Radius of the border circle (center of the border thickness)
+                    // On soustrait 0.5px pour que le bord intérieur chevauche légèrement la loupe
+                    // Subtract 0.5px so the inner edge slightly overlaps the magnifier
+                    let border_radius = mag_size / 2.0 + BORDER_WIDTH / 2.0 - 0.5;
 
                     // Couleur de la bordure = couleur du pixel
+                    // Border color = pixel color
                     let border_color = NSColor::colorWithCalibratedRed_green_blue_alpha(r_val, g_val, b_val, 1.0);
-                    border_color.setStroke();
+                    border_color.setStroke(); // Set as stroke color
 
-                    // Dessine le cercle de la bordure
-                    let border_path = NSBezierPath::bezierPathWithOvalInRect(border_rect);
-                    border_path.setLineWidth(BORDER_WIDTH);
-                    border_path.stroke();
+                    // Crée le chemin pour l'arc (haut ou bas selon fg_mode)
+                    // Create the path for the arc (top or bottom based on fg_mode)
+                    let arc_path = NSBezierPath::bezierPath(); // Create empty bezier path
+                    
+                    // Angles pour les arcs (en degrés, sens anti-horaire depuis l'axe X positif)
+                    // Angles for arcs (in degrees, counter-clockwise from positive X axis)
+                    // Arc du haut: de 0° à 180° (demi-cercle supérieur)
+                    // Top arc: from 0° to 180° (upper half-circle)
+                    // Arc du bas: de 180° à 360° (demi-cercle inférieur)
+                    // Bottom arc: from 180° to 360° (lower half-circle)
+                    let (start_angle, end_angle) = if fg_mode {
+                        (0.0_f64, 180.0_f64) // Top arc (foreground)
+                    } else {
+                        (180.0_f64, 360.0_f64) // Bottom arc (background)
+                    };
+
+                    // Ajoute l'arc au chemin
+                    // Add the arc to the path
+                    // appendBezierPathWithArcWithCenter:radius:startAngle:endAngle:clockwise:
+                    // Note: Dans Cocoa, clockwise=NO signifie sens anti-horaire (sens mathématique positif)
+                    // Note: In Cocoa, clockwise=NO means counter-clockwise (positive mathematical direction)
+                    unsafe {
+                        let _: () = msg_send![
+                            &*arc_path,
+                            appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y), // Center point
+                            radius: border_radius,    // Arc radius
+                            startAngle: start_angle,  // Start angle in degrees
+                            endAngle: end_angle,      // End angle in degrees
+                            clockwise: Bool::NO       // Counter-clockwise direction
+                        ];
+                    }
+
+                    arc_path.setLineWidth(BORDER_WIDTH); // Set the line width
+                    arc_path.stroke(); // Draw the arc
 
                     // -------------------------------------------------------------
-                    // Dessine le texte hexadécimal en arc
+                    // Dessine le texte hexadécimal en arc (haut ou bas selon fg_mode)
+                    // Draw the hex text on arc (top or bottom based on fg_mode)
                     // -------------------------------------------------------------
                     // Crée la police système avec objc2 NSFont API
+                    // Create system font using objc2 NSFont API
                     let font: Retained<NSFont> = NSFont::systemFontOfSize(HEX_FONT_SIZE);
 
                     // Calcule la luminance pour choisir la couleur du texte
+                    // Calculate luminance to choose text color
                     // Formule standard pour la luminance perçue
+                    // Standard formula for perceived luminance
                     let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
 
                     // Texte noir sur fond clair, blanc sur fond sombre
+                    // Black text on light background, white text on dark background
                     let text_color = if luminance > 0.5 {
-                        NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0) // Black
                     } else {
-                        NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0) // White
                     };
 
                     // Texte à afficher
-                    let hex_text = &info.hex_color;
-                    let char_count = hex_text.len() as f64;
-                    // Rayon de l'arc de texte (milieu de la bordure)
-                    let radius = mag_size / 2.0 + BORDER_WIDTH / 2.0;
+                    // Text to display
+                    let hex_text = &info.hex_color; // Hex color string (e.g., "#FF00FF")
+                    let char_count = hex_text.len() as f64; // Number of characters
+                    // Rayon de l'arc de texte (milieu de la bordure, même ajustement que border_radius)
+                    // Radius of text arc (middle of the border, same adjustment as border_radius)
+                    let radius = mag_size / 2.0 + BORDER_WIDTH / 2.0 - 0.5;
 
                     // Calcule l'angle entre chaque caractère
+                    // Calculate angle between each character
                     let angle_step = CHAR_SPACING_PIXELS / radius;
                     // Arc total occupé par le texte
+                    // Total arc occupied by text
                     let total_arc = angle_step * (char_count - 1.0);
-                    // Angle de départ (centré en haut)
-                    let start_angle: f64 = std::f64::consts::PI / 2.0 + total_arc / 2.0;
+                    
+                    // Angle de départ selon fg_mode:
+                    // Start angle based on fg_mode:
+                    // - fg=true (haut): centré en haut à PI/2 (90°)
+                    // - fg=true (top): centered at top at PI/2 (90°)
+                    // - fg=false (bas): centré en bas à -PI/2 (-90° ou 270°)
+                    // - fg=false (bottom): centered at bottom at -PI/2 (-90° or 270°)
+                    let text_start_angle: f64 = if fg_mode {
+                        // Arc du haut: texte centré en haut, lecture de gauche à droite
+                        // Top arc: text centered at top, reading left to right
+                        std::f64::consts::PI / 2.0 + total_arc / 2.0
+                    } else {
+                        // Arc du bas: texte centré en bas, lecture de gauche à droite
+                        // Bottom arc: text centered at bottom, reading left to right
+                        -std::f64::consts::PI / 2.0 - total_arc / 2.0
+                    };
 
                     // Sauvegarde l'état graphique
+                    // Save graphics state
                     NSGraphicsContext::saveGraphicsState_class();
 
                     // Dessine chaque caractère individuellement
+                    // Draw each character individually
                     for (i, c) in hex_text.chars().enumerate() {
-                        // Angle pour ce caractère
-                        let angle = start_angle - angle_step * (i as f64);
+                        // Angle pour ce caractère selon fg_mode
+                        // Angle for this character based on fg_mode
+                        let angle = if fg_mode {
+                            // Arc du haut: on parcourt de gauche à droite (angles décroissants)
+                            // Top arc: traverse left to right (decreasing angles)
+                            text_start_angle - angle_step * (i as f64)
+                        } else {
+                            // Arc du bas: on parcourt de gauche à droite (angles croissants)
+                            // Bottom arc: traverse left to right (increasing angles)
+                            text_start_angle + angle_step * (i as f64)
+                        };
 
                         // Position sur l'arc
-                        let char_x = center_x + radius * angle.cos();
-                        let char_y = center_y + radius * angle.sin();
+                        // Position on the arc
+                        let char_x = center_x + radius * angle.cos(); // X coordinate
+                        let char_y = center_y + radius * angle.sin(); // Y coordinate
 
                         // Convertit le caractère en NSString
-                        let char_str = c.to_string();
-                        let ns_char = NSString::from_str(&char_str);
+                        // Convert character to NSString
+                        let char_str = c.to_string(); // Convert char to String
+                        let ns_char = NSString::from_str(&char_str); // Convert to NSString
 
                         // Crée le dictionnaire d'attributs pour le texte
                         // Create the attribute dictionary for text
@@ -986,7 +1072,7 @@ fn draw_view(view: &NSView) {
 
                         // Create slices of keys and values for the dictionary
                         // from_slices expects &[&Key] and &[&Value]
-                        let keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
+                        let keys: &[&NSString] = &[&font_attr_key, &color_attr_key]; // Array of keys
                         let values: &[&AnyObject] = &[
                             // Cast NSFont reference to AnyObject reference
                             &*(font.as_ref() as *const NSFont as *const AnyObject),
@@ -996,28 +1082,49 @@ fn draw_view(view: &NSView) {
                         let attributes = NSDictionary::from_slices(keys, values); // Create dictionary from slices
 
                         // Mesure la taille du caractère
+                        // Measure character size
                         let char_size: NSSize = ns_char.sizeWithAttributes(Some(&attributes));
 
                         // Crée une transformation pour positionner et tourner le caractère
-                        let transform = NSAffineTransform::transform();
+                        // Create a transform to position and rotate the character
+                        let transform = NSAffineTransform::transform(); // Create identity transform
                         // Déplace à la position sur l'arc
+                        // Translate to position on the arc
                         transform.translateXBy_yBy(char_x, char_y);
 
-                        // Tourne pour suivre la tangente de l'arc
-                        let rotation_angle = angle - std::f64::consts::PI / 2.0;
-                        transform.rotateByRadians(rotation_angle);
+                        // Tourne pour suivre la tangente de l'arc selon fg_mode
+                        // Rotate to follow the arc tangent based on fg_mode
+                        let rotation_angle = if fg_mode {
+                            // Arc du haut: texte orienté vers l'extérieur (lettres droites vues du centre)
+                            // Top arc: text oriented outward (letters upright when viewed from center)
+                            angle - std::f64::consts::PI / 2.0
+                        } else {
+                            // Arc du bas: texte orienté vers l'extérieur (lettres droites vues du centre)
+                            // Bottom arc: text oriented outward (letters upright when viewed from center)
+                            // On ajoute PI pour retourner le texte de 180°
+                            // Add PI to flip the text 180°
+                            angle + std::f64::consts::PI / 2.0
+                        };
+                        transform.rotateByRadians(rotation_angle); // Apply rotation
 
                         // Applique la transformation
+                        // Apply the transform
                         transform.concat();
 
-                        // Dessine le caractère (décalé de sa taille pour le centrer)
-                        let draw_point = NSPoint::new(-char_size.width, -char_size.height);
-                        ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes));
+                        // Dessine le caractère (décalé pour le centrer dans l'épaisseur de la bordure)
+                        // Draw the character (offset to center it within the border thickness)
+                        // Décalage X: centrer horizontalement (-width/2)
+                        // X offset: center horizontally (-width/2)
+                        // Décalage Y: centrer verticalement dans la bordure (-height/2)
+                        // Y offset: center vertically within border (-height/2)
+                        let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
+                        ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes)); // Draw the character
 
                         // Inverse la transformation pour le prochain caractère
-                        let inverse = transform.copy();
-                        inverse.invert();
-                        inverse.concat();
+                        // Invert the transform for the next character
+                        let inverse = transform.copy(); // Copy the transform
+                        inverse.invert(); // Invert it
+                        inverse.concat(); // Apply the inverse
                     }
 
                     // Restaure l'état graphique

@@ -35,7 +35,7 @@ fn main() {
     
     #[cfg(target_os = "macos")]
     {
-        selected_color = macos::run();
+        selected_color = macos::run(true);
     }
 
     #[cfg(target_os = "windows")]
