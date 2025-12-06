@@ -26,7 +26,7 @@
 // -----------------------------------------------------------------------------
 // API moderne et type-safe pour déclarer des classes Objective-C en Rust
 // Modern type-safe API for declaring Objective-C classes in Rust
-use objc2::{define_class, msg_send, msg_send_id, ClassType, DefinedClass, MainThreadOnly}; // Class declaration macros
+use objc2::{define_class, msg_send, MainThreadOnly}; // Class declaration macros
 use objc2::rc::{Allocated, Retained};                                          // Smart pointers for ObjC objects
 
 // Types Foundation (équivalent de la bibliothèque standard ObjC)
@@ -82,12 +82,6 @@ use crate::config::*;
 // =============================================================================
 // ALIAS DE TYPES ET CONSTANTES
 // =============================================================================
-
-/// Type AnyObject de objc2 pour les APIs objc2 modernes
-/// Utilisé pour les casts vers les classes objc2
-/// AnyObject type from objc2 for modern objc2 APIs
-/// Used for casts to objc2 classes
-use objc2::runtime::AnyObject;
 
 /// Type Bool de objc2 pour les booléens Objective-C
 /// Remplace objc::runtime::BOOL qui est moins type-safe
@@ -169,7 +163,7 @@ define_class!(
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
             // Get the mouse position in window coordinates
-            let location: NSPoint = unsafe { event.locationInWindow() };
+            let location: NSPoint = event.locationInWindow();
 
             // Get the parent window of this view
             let window_opt: Option<Retained<NSWindow2>> = self.window();
@@ -177,7 +171,7 @@ define_class!(
             // If we have a valid window
             if let Some(window) = window_opt {
                 // Convert window coordinates to screen coordinates
-                let screen_location: NSPoint = unsafe { window.convertPointToScreen(location) };
+                let screen_location: NSPoint = window.convertPointToScreen(location);
 
                 // Get the pixel color at the cursor position
                 if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
@@ -213,7 +207,7 @@ define_class!(
                     }
 
                     // Request a display refresh
-                    unsafe { self.setNeedsDisplay(true) };
+                    self.setNeedsDisplay(true);
                 }
             }
         }
@@ -229,7 +223,7 @@ define_class!(
         #[unsafe(method(scrollWheel:))]
         fn scroll_wheel(&self, event: &NSEvent) {
             // Get the vertical delta of the scroll wheel
-            let delta_y: f64 = unsafe { event.deltaY() };
+            let delta_y: f64 = event.deltaY();
 
             // If the wheel moved
             if delta_y != 0.0 {
@@ -242,7 +236,7 @@ define_class!(
                 }
 
                 // Request a refresh to display the new zoom
-                unsafe { self.setNeedsDisplay(true) };
+                self.setNeedsDisplay(true);
             }
         }
 
@@ -257,9 +251,9 @@ define_class!(
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
             // Get the key code of the pressed key
-            let key_code: u16 = unsafe { event.keyCode() };
+            let key_code: u16 = event.keyCode();
             // Get the modifiers (Shift, Ctrl, etc.)
-            let modifier_flags: NSEventModifierFlags = unsafe { event.modifierFlags() };
+            let modifier_flags: NSEventModifierFlags = event.modifierFlags();
 
             // Check if Shift is pressed
             // In objc2-app-kit 0.3, the constant is NSEventModifierFlags::Shift
@@ -356,7 +350,7 @@ define_class!(
                                 }
 
                                 // Request a refresh
-                                unsafe { self.setNeedsDisplay(true) };
+                                self.setNeedsDisplay(true);
                             }
                         }
                     }
@@ -536,9 +530,7 @@ fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
 /// Fonction helper pour arrêter l'application et réafficher le curseur
 fn stop_application() {
     // Réaffiche le curseur de la souris
-    unsafe {
-        NSCursor::unhide();
-    }
+    NSCursor::unhide();
 
     // Récupère le marqueur de thread principal
     if let Some(mtm) = MainThreadMarker::new() {
@@ -549,7 +541,7 @@ fn stop_application() {
 
         // Crée un événement factice pour forcer la sortie de la boucle run
         // Sans cela, stop() ne prend effet qu'au prochain événement
-        unsafe {
+        {
             use objc2_app_kit::NSEventType;
 
             // Crée un événement de type ApplicationDefined
@@ -608,7 +600,7 @@ pub fn run() -> Option<(u8, u8, u8)> {
         for i in 0..count {
             // Récupère l'écran à l'index i via objectAtIndex:
             // Get the screen at index i via objectAtIndex:
-            let screen: Retained<NSScreen> = msg_send_id![&*screens, objectAtIndex: i];
+            let screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: i];
             // Récupère les dimensions de l'écran via l'API objc2 native
             // Get the screen dimensions using native objc2 API
             let frame: NSRect = screen.frame(); // Returns NSRect directly
@@ -622,9 +614,9 @@ pub fn run() -> Option<(u8, u8, u8)> {
                 // NSBackingStoreType: 0 = Retained, 1 = Nonretained, 2 = Buffered
                 const NS_BACKING_STORE_BUFFERED: u64 = 2; // NSBackingStoreBuffered
                 // Initialize with content rect, style mask, backing store type, and defer flag
-                // Use msg_send_id! for init methods that return Retained
+                // Use msg_send! for init methods that return Retained
                 let initialized: Retained<KeyableWindow> = {
-                    msg_send_id![
+                    msg_send![
                         allocated,
                         initWithContentRect: frame,                      // Window frame rectangle
                         styleMask: NSWindowStyleMask::Borderless,        // No border style
@@ -660,9 +652,9 @@ pub fn run() -> Option<(u8, u8, u8)> {
             let view: Retained<ColorPickerView> = {
                 // Allocate the view object using MainThreadMarker for MainThreadOnly classes
                 let allocated: Allocated<ColorPickerView> = mtm.alloc(); // Allocate memory for the view
-                // Initialize with frame - use msg_send_id! for init methods that return Retained
+                // Initialize with frame - use msg_send! for init methods that return Retained
                 let initialized: Retained<ColorPickerView> = {
-                    msg_send_id![allocated, initWithFrame: frame] // Initialize with frame
+                    msg_send![allocated, initWithFrame: frame] // Initialize with frame
                 };
                 initialized // Return the initialized view
             };
@@ -680,7 +672,7 @@ pub fn run() -> Option<(u8, u8, u8)> {
     } // End of unsafe block
 
     // Active l'application en utilisant l'API objc2 native
-    unsafe {
+    {
         // Récupère l'instance de l'application en cours d'exécution
         let running_app = NSRunningApplication::currentApplication();
         // Active l'application avec les options par défaut (vide = activation standard)
@@ -688,14 +680,10 @@ pub fn run() -> Option<(u8, u8, u8)> {
     }
 
     // Cache le curseur de la souris
-    unsafe {
-        NSCursor::hide();
-    }
+    NSCursor::hide();
 
     // Lance la boucle d'événements (bloque jusqu'à stop())
-    unsafe {
-        app.run();
-    }
+    app.run();
 
     // Retourne la couleur sélectionnée (si elle existe)
     if let Ok(color) = SELECTED_COLOR.lock() {
@@ -722,16 +710,16 @@ fn draw_view(view: &NSView) {
     // Dessine l'overlay semi-transparent
     // -------------------------------------------------------------------------
     // Crée une couleur noire avec 5% d'opacité
-    let overlay_color = unsafe { NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05) };
+    let overlay_color = NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05);
     // Définit comme couleur de remplissage
-    unsafe { overlay_color.set() };
+    overlay_color.set();
 
     // Récupère les limites de la vue
     let bounds: NSRect = view.bounds();
     // Crée un chemin rectangulaire couvrant toute la vue
-    let bounds_path = unsafe { NSBezierPath::bezierPathWithRect(bounds) };
+    let bounds_path = NSBezierPath::bezierPathWithRect(bounds);
     // Remplit avec la couleur overlay
-    unsafe { bounds_path.fill() };
+    bounds_path.fill();
 
     // -------------------------------------------------------------------------
     // Dessine la loupe si on a des informations sur la souris
@@ -816,7 +804,7 @@ fn draw_view(view: &NSView) {
                     
                     // Use msg_send! to call initWithCGImage:size:
                     // This consumes the allocated object and returns the initialized object
-                    let ns_image_ptr: *mut AnyObject = msg_send![ns_image_alloc, initWithCGImage:cg_image_ref size:full_size];
+                    let ns_image_ptr: *mut AnyObject = msg_send![ns_image_alloc, initWithCGImage: cg_image_ref, size: full_size];
                     
                     // Wrap in Retained - the init method returns a retained object
                     // SAFETY: initWithCGImage:size: returns a retained +1 object
@@ -871,10 +859,13 @@ fn draw_view(view: &NSView) {
                     // operation: 2 = NSCompositingOperationSourceOver (standard alpha blending)
                     // fraction: 1.0 = full opacity (no transparency)
                     const NS_COMPOSITING_OPERATION_SOURCE_OVER: usize = 2; // NSCompositingOperationSourceOver constant
-                    let _: () = msg_send![&*ns_image, drawInRect:mag_rect
-                                          fromRect:from_rect
-                                          operation:NS_COMPOSITING_OPERATION_SOURCE_OVER
-                                          fraction:1.0_f64];
+                    let _: () = msg_send![
+                        &*ns_image,
+                        drawInRect: mag_rect,
+                        fromRect: from_rect,
+                        operation: NS_COMPOSITING_OPERATION_SOURCE_OVER,
+                        fraction: 1.0_f64
+                    ];
 
                     // Restaure l'état graphique
                     // Restore graphics state
@@ -998,9 +989,9 @@ fn draw_view(view: &NSView) {
                         let keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
                         let values: &[&AnyObject] = &[
                             // Cast NSFont reference to AnyObject reference
-                            unsafe { &*(font.as_ref() as *const NSFont as *const AnyObject) },
+                            &*(font.as_ref() as *const NSFont as *const AnyObject),
                             // Cast NSColor reference to AnyObject reference
-                            unsafe { &*(text_color.as_ref() as *const NSColor as *const AnyObject) },
+                            &*(text_color.as_ref() as *const NSColor as *const AnyObject),
                         ];
                         let attributes = NSDictionary::from_slices(keys, values); // Create dictionary from slices
 
