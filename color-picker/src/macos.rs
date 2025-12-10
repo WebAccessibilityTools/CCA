@@ -482,14 +482,23 @@ define_class!(
                             // Capture size in points (adjusted for Retina)
                             let capture_size = captured_pixels / scale_factor;
 
-                            // Get the screen height in points for coordinate conversion
-                            // Récupère la hauteur de l'écran en points pour la conversion
-                            let screen_height_points = if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
-                                if let Some(main_screen) = NSScreen::mainScreen(mtm) {
-                                    main_screen.frame().size.height
+                            // Get screen height in points from the window's screen
+                            // Récupère la hauteur de l'écran en points depuis l'écran de la fenêtre
+                            let screen_height_points = if let Some(window) = self.window() {
+                                if let Some(screen) = window.screen() {
+                                    screen.frame().size.height
                                 } else {
-                                    let main_display = CGDisplay::main();
-                                    main_display.pixels_high() as f64 / scale_factor
+                                    if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
+                                        if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                                            main_screen.frame().size.height
+                                        } else {
+                                            let main_display = CGDisplay::main();
+                                            main_display.pixels_high() as f64 / scale_factor
+                                        }
+                                    } else {
+                                        let main_display = CGDisplay::main();
+                                        main_display.pixels_high() as f64 / scale_factor
+                                    }
                                 }
                             } else {
                                 let main_display = CGDisplay::main();
@@ -497,17 +506,30 @@ define_class!(
                             };
 
                             // Convert Cocoa coordinates (origin bottom-left, in points) to 
-                            // Core Graphics warp coordinates (origin top-left, in PIXELS)
-                            // warp_mouse_cursor_position uses PIXELS, not points!
+                            // Core Graphics coordinates (origin top-left, in points)
+                            // CGEvent uses POINTS, not pixels
                             // Convertit les coordonnées Cocoa (origine en bas, en points) vers
-                            // les coordonnées warp de Core Graphics (origine en haut, en PIXELS)
-                            let cg_x = new_x * scale_factor;
-                            let cg_y = (screen_height_points - new_y) * scale_factor;
+                            // les coordonnées Core Graphics (origine en haut, en points)
+                            let cg_x = new_x;
+                            let cg_y = screen_height_points - new_y;
 
-                            // Move the mouse cursor to the new position (in pixels)
-                            let _ = CGDisplay::warp_mouse_cursor_position(
-                                core_graphics::geometry::CGPoint::new(cg_x, cg_y)
-                            );
+                            // Move the mouse cursor using CGEvent (more reliable than warp)
+                            // Déplace le curseur de la souris en utilisant CGEvent (plus fiable que warp)
+                            use core_graphics::event::{CGEvent, CGEventType, CGMouseButton};
+                            use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+                            use core_graphics::geometry::CGPoint as CGPointCG;
+                            
+                            if let Ok(source) = CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+                                let point = CGPointCG::new(cg_x, cg_y);
+                                if let Ok(event) = CGEvent::new_mouse_event(
+                                    source,
+                                    CGEventType::MouseMoved,
+                                    point,
+                                    CGMouseButton::Left
+                                ) {
+                                    event.post(core_graphics::event::CGEventTapLocation::HID);
+                                }
+                            }
 
                             // Release the lock before getting the new color
                             drop(state);
