@@ -1381,7 +1381,7 @@ fn draw_view(view: &NSView) {
                     // Dessine la bordure colorée (arc haut ou bas selon fg_mode)
                     // Draw the colored border (top or bottom arc based on fg_mode)
                     // -------------------------------------------------------------
-                    // Parse la couleur hex
+                    // Parse la couleur hex actuelle
                     let hex = &info.hex_color[1..]; // Enlève le # / Remove the #
                     let r_val = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0; // Red component
                     let g_val = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0; // Green component
@@ -1394,6 +1394,27 @@ fn draw_view(view: &NSView) {
                     } else {
                         true // Default to top arc if lock fails
                     };
+                    
+                    // Récupère le mode continue
+                    // Get continue mode
+                    let is_continue_mode = if let Ok(mode) = CONTINUE_MODE.lock() {
+                        *mode
+                    } else {
+                        false
+                    };
+                    
+                    // Récupère les couleurs déjà capturées
+                    // Get already captured colors
+                    let captured_fg = if let Ok(color) = FG_COLOR.lock() {
+                        *color
+                    } else {
+                        None
+                    };
+                    let captured_bg = if let Ok(color) = BG_COLOR.lock() {
+                        *color
+                    } else {
+                        None
+                    };
 
                     // Rayon du cercle de bordure (centre de l'épaisseur de la bordure)
                     // Radius of the border circle (center of the border thickness)
@@ -1401,13 +1422,58 @@ fn draw_view(view: &NSView) {
                     // Subtract 0.5px so the inner edge slightly overlaps the magnifier
                     let border_radius = mag_size / 2.0 + BORDER_WIDTH / 2.0 - 0.5;
 
-                    // Couleur de la bordure = couleur du pixel
-                    // Border color = pixel color
+                    // En mode continue, dessine d'abord l'arc de la couleur déjà capturée (si elle existe)
+                    // In continue mode, first draw the arc for the already captured color (if it exists)
+                    if is_continue_mode {
+                        // Si on est en mode fg (arc du haut), dessiner la couleur bg capturée en bas
+                        // If we're in fg mode (top arc), draw the captured bg color at bottom
+                        // Si on est en mode bg (arc du bas), dessiner la couleur fg capturée en haut
+                        // If we're in bg mode (bottom arc), draw the captured fg color at top
+                        let (captured_color, captured_start, captured_end) = if fg_mode {
+                            // On capture fg (haut), donc afficher bg capturé (bas) si existant
+                            // Capturing fg (top), so show captured bg (bottom) if exists
+                            (captured_bg, 180.0_f64, 360.0_f64)
+                        } else {
+                            // On capture bg (bas), donc afficher fg capturé (haut) si existant
+                            // Capturing bg (bottom), so show captured fg (top) if exists
+                            (captured_fg, 0.0_f64, 180.0_f64)
+                        };
+                        
+                        if let Some((cap_r, cap_g, cap_b)) = captured_color {
+                            // Dessine l'arc de la couleur capturée
+                            // Draw the arc for the captured color
+                            let cap_r_val = cap_r as f64 / 255.0;
+                            let cap_g_val = cap_g as f64 / 255.0;
+                            let cap_b_val = cap_b as f64 / 255.0;
+                            
+                            let captured_color_ns = NSColor::colorWithCalibratedRed_green_blue_alpha(
+                                cap_r_val, cap_g_val, cap_b_val, 1.0
+                            );
+                            captured_color_ns.setStroke();
+                            
+                            let captured_arc_path = NSBezierPath::bezierPath();
+                            unsafe {
+                                let _: () = msg_send![
+                                    &*captured_arc_path,
+                                    appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y),
+                                    radius: border_radius,
+                                    startAngle: captured_start,
+                                    endAngle: captured_end,
+                                    clockwise: Bool::NO
+                                ];
+                            }
+                            captured_arc_path.setLineWidth(BORDER_WIDTH);
+                            captured_arc_path.stroke();
+                        }
+                    }
+
+                    // Couleur de la bordure = couleur du pixel actuel
+                    // Border color = current pixel color
                     let border_color = NSColor::colorWithCalibratedRed_green_blue_alpha(r_val, g_val, b_val, 1.0);
                     border_color.setStroke(); // Set as stroke color
 
-                    // Crée le chemin pour l'arc (haut ou bas selon fg_mode)
-                    // Create the path for the arc (top or bottom based on fg_mode)
+                    // Crée le chemin pour l'arc actuel (haut ou bas selon fg_mode)
+                    // Create the path for the current arc (top or bottom based on fg_mode)
                     let arc_path = NSBezierPath::bezierPath(); // Create empty bezier path
                     
                     // Angles pour les arcs (en degrés, sens anti-horaire depuis l'axe X positif)
@@ -1441,266 +1507,285 @@ fn draw_view(view: &NSView) {
                     arc_path.setLineWidth(BORDER_WIDTH); // Set the line width
                     arc_path.stroke(); // Draw the arc
 
+                    // Crée la police système pour le texte
+                    // Create system font for text
+                    let font: Retained<NSFont> = NSFont::systemFontOfSize(HEX_FONT_SIZE);
+
+                    // -------------------------------------------------------------
+                    // Dessine le texte en arc pour l'arc de la couleur capturée (si existe)
+                    // Draw arc text for the captured color arc (if exists)
+                    // -------------------------------------------------------------
+                    if is_continue_mode {
+                        let (captured_color_for_text, captured_fg_mode_for_text) = if fg_mode {
+                            (captured_bg, false) // On affiche bg en bas
+                        } else {
+                            (captured_fg, true) // On affiche fg en haut
+                        };
+                        
+                        if let Some((cap_r, cap_g, cap_b)) = captured_color_for_text {
+                            let cap_hex = format!("#{:02X}{:02X}{:02X}", cap_r, cap_g, cap_b);
+                            let cap_label = if captured_fg_mode_for_text {
+                                format!("Foreground - {}", cap_hex)
+                            } else {
+                                format!("Background - {}", cap_hex)
+                            };
+                            
+                            // Couleur du texte basée sur la luminance de la couleur capturée
+                            let cap_luminance = 0.299 * (cap_r as f64 / 255.0) 
+                                              + 0.587 * (cap_g as f64 / 255.0) 
+                                              + 0.114 * (cap_b as f64 / 255.0);
+                            let cap_text_color = if cap_luminance > 0.5 {
+                                NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
+                            } else {
+                                NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
+                            };
+                            
+                            // Dessine le texte de la couleur capturée (sans badge C)
+                            draw_arc_text(
+                                &cap_label,
+                                center_x, center_y,
+                                border_radius,
+                                captured_fg_mode_for_text,
+                                &font,
+                                &cap_text_color,
+                                false, // Pas de badge C pour la couleur capturée
+                            );
+                        }
+                    }
+
                     // -------------------------------------------------------------
                     // Dessine le texte hexadécimal en arc (haut ou bas selon fg_mode)
                     // Draw the hex text on arc (top or bottom based on fg_mode)
                     // -------------------------------------------------------------
-                    // Crée la police système avec objc2 NSFont API
-                    // Create system font using objc2 NSFont API
-                    let font: Retained<NSFont> = NSFont::systemFontOfSize(HEX_FONT_SIZE);
-
                     // Calcule la luminance pour choisir la couleur du texte
                     // Calculate luminance to choose text color
-                    // Formule standard pour la luminance perçue
-                    // Standard formula for perceived luminance
                     let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
 
                     // Texte noir sur fond clair, blanc sur fond sombre
                     // Black text on light background, white text on dark background
                     let text_color = if luminance > 0.5 {
-                        NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0) // Black
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
                     } else {
-                        NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0) // White
+                        NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
                     };
 
-                    // Vérifie si le mode continue est activé
-                    // Check if continue mode is enabled
-                    let continue_mode = if let Ok(mode) = CONTINUE_MODE.lock() {
-                        *mode // Copy the boolean value
+                    // Construit le texte avec label Foreground/Background
+                    // Build text with Foreground/Background label
+                    let label = if fg_mode {
+                        format!("Foreground - {}", &info.hex_color)
                     } else {
-                        false // Default to disabled if lock fails
+                        format!("Background - {}", &info.hex_color)
                     };
-
-                    // Texte à afficher (avec ou sans badge selon le mode continue)
-                    // Text to display (with or without badge based on continue mode)
-                    let hex_text = &info.hex_color; // Hex color string (e.g., "#FF00FF")
                     
-                    // Nombre de caractères pour le calcul de l'arc
-                    // Si mode continue activé, on ajoute 2 espaces pour la pastille (espace + C + espace)
-                    // Number of characters for arc calculation
-                    // If continue mode enabled, add 2 spaces for badge (space + C + space)
-                    let badge_extra_chars = if continue_mode { 2.0 } else { 0.0 };
-                    let char_count = hex_text.len() as f64 + badge_extra_chars; // Total character count
-                    
-                    // Rayon de l'arc de texte (milieu de la bordure, même ajustement que border_radius)
-                    // Radius of text arc (middle of the border, same adjustment as border_radius)
-                    let radius = mag_size / 2.0 + BORDER_WIDTH / 2.0 - 0.5;
-
-                    // Calcule l'angle entre chaque caractère
-                    // Calculate angle between each character
-                    let angle_step = CHAR_SPACING_PIXELS / radius;
-                    // Arc total occupé par le texte
-                    // Total arc occupied by text
-                    let total_arc = angle_step * (char_count - 1.0);
-                    
-                    // Angle de départ selon fg_mode:
-                    // Start angle based on fg_mode:
-                    // - fg=true (haut): centré en haut à PI/2 (90°)
-                    // - fg=true (top): centered at top at PI/2 (90°)
-                    // - fg=false (bas): centré en bas à -PI/2 (-90° ou 270°)
-                    // - fg=false (bottom): centered at bottom at -PI/2 (-90° or 270°)
-                    let text_start_angle: f64 = if fg_mode {
-                        // Arc du haut: texte centré en haut, lecture de gauche à droite
-                        // Top arc: text centered at top, reading left to right
-                        std::f64::consts::PI / 2.0 + total_arc / 2.0
-                    } else {
-                        // Arc du bas: texte centré en bas, lecture de gauche à droite
-                        // Bottom arc: text centered at bottom, reading left to right
-                        -std::f64::consts::PI / 2.0 - total_arc / 2.0
-                    };
-
-                    // Sauvegarde l'état graphique
-                    // Save graphics state
-                    NSGraphicsContext::saveGraphicsState_class();
-
-                    // Index de caractère courant (en comptant la pastille si présente)
-                    // Current character index (counting the badge if present)
-                    let mut char_index: f64 = 0.0;
-
-                    // -------------------------------------------------------------
-                    // Dessine la pastille "C" si mode continue activé
-                    // Draw the "C" badge if continue mode is enabled
-                    // -------------------------------------------------------------
-                    if continue_mode {
-                        // Angle pour la pastille (premier élément)
-                        // Angle for the badge (first element)
-                        let badge_angle = if fg_mode {
-                            text_start_angle - angle_step * char_index
-                        } else {
-                            text_start_angle + angle_step * char_index
-                        };
-
-                        // Position de la pastille sur l'arc
-                        // Badge position on the arc
-                        let badge_x = center_x + radius * badge_angle.cos();
-                        let badge_y = center_y + radius * badge_angle.sin();
-
-                        // Taille de la pastille (légèrement plus grande que la police)
-                        // Badge size (slightly larger than the font)
-                        let badge_radius = HEX_FONT_SIZE * 0.7;
-
-                        // Dessine le cercle rouge de fond
-                        // Draw the red background circle
-                        let badge_rect = NSRect::new(
-                            NSPoint::new(badge_x - badge_radius, badge_y - badge_radius),
-                            NSSize::new(badge_radius * 2.0, badge_radius * 2.0)
-                        );
-                        let red_color = NSColor::colorWithCalibratedRed_green_blue_alpha(0.9, 0.1, 0.1, 1.0);
-                        red_color.setFill(); // Set red as fill color
-                        let badge_circle = NSBezierPath::bezierPathWithOvalInRect(badge_rect);
-                        badge_circle.fill(); // Fill the circle
-
-                        // Dessine la lettre "C" en blanc
-                        // Draw the letter "C" in white
-                        let white_color = NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0);
-                        let ns_c = NSString::from_str("C"); // The letter "C"
-
-                        // Crée les attributs pour le texte blanc
-                        // Create attributes for white text
-                        use objc2_foundation::NSDictionary;
-                        let font_attr_key = NSString::from_str("NSFont");
-                        let color_attr_key = NSString::from_str("NSColor");
-                        let badge_keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
-                        let badge_values: &[&AnyObject] = &[
-                            &*(font.as_ref() as *const NSFont as *const AnyObject),
-                            &*(white_color.as_ref() as *const NSColor as *const AnyObject),
-                        ];
-                        let badge_attributes = NSDictionary::from_slices(badge_keys, badge_values);
-
-                        // Mesure la taille du "C"
-                        // Measure the size of "C"
-                        let c_size: NSSize = ns_c.sizeWithAttributes(Some(&badge_attributes));
-
-                        // Crée une transformation pour positionner et tourner le "C"
-                        // Create a transform to position and rotate the "C"
-                        let badge_transform = NSAffineTransform::transform();
-                        badge_transform.translateXBy_yBy(badge_x, badge_y);
-
-                        // Rotation selon l'arc
-                        // Rotation based on arc
-                        let badge_rotation = if fg_mode {
-                            badge_angle - std::f64::consts::PI / 2.0
-                        } else {
-                            badge_angle + std::f64::consts::PI / 2.0
-                        };
-                        badge_transform.rotateByRadians(badge_rotation);
-                        badge_transform.concat();
-
-                        // Dessine le "C" centré
-                        // Draw the "C" centered
-                        let c_draw_point = NSPoint::new(-c_size.width / 2.0, -c_size.height / 2.0);
-                        ns_c.drawAtPoint_withAttributes(c_draw_point, Some(&badge_attributes));
-
-                        // Inverse la transformation
-                        // Invert the transform
-                        let badge_inverse = badge_transform.copy();
-                        badge_inverse.invert();
-                        badge_inverse.concat();
-
-                        // Avance de 2 positions (pastille + espace)
-                        // Advance by 2 positions (badge + space)
-                        char_index += 2.0;
-                    }
-
-                    // -------------------------------------------------------------
-                    // Dessine chaque caractère du texte hex
-                    // Draw each character of the hex text
-                    // -------------------------------------------------------------
-                    for (_i, c) in hex_text.chars().enumerate() {
-                        // Angle pour ce caractère selon fg_mode
-                        // Angle for this character based on fg_mode
-                        let angle = if fg_mode {
-                            // Arc du haut: on parcourt de gauche à droite (angles décroissants)
-                            // Top arc: traverse left to right (decreasing angles)
-                            text_start_angle - angle_step * char_index
-                        } else {
-                            // Arc du bas: on parcourt de gauche à droite (angles croissants)
-                            // Bottom arc: traverse left to right (increasing angles)
-                            text_start_angle + angle_step * char_index
-                        };
-
-                        // Incrémente l'index pour le prochain caractère
-                        // Increment index for next character
-                        char_index += 1.0;
-
-                        // Position sur l'arc
-                        // Position on the arc
-                        let char_x = center_x + radius * angle.cos(); // X coordinate
-                        let char_y = center_y + radius * angle.sin(); // Y coordinate
-
-                        // Convertit le caractère en NSString
-                        // Convert character to NSString
-                        let char_str = c.to_string(); // Convert char to String
-                        let ns_char = NSString::from_str(&char_str); // Convert to NSString
-
-                        // Crée le dictionnaire d'attributs pour le texte
-                        // Create the attribute dictionary for text
-                        use objc2_foundation::NSDictionary;
-
-                        let font_attr_key = NSString::from_str("NSFont");        // Font attribute key
-                        let color_attr_key = NSString::from_str("NSColor");      // Color attribute key
-
-                        // Create slices of keys and values for the dictionary
-                        // from_slices expects &[&Key] and &[&Value]
-                        let keys: &[&NSString] = &[&font_attr_key, &color_attr_key]; // Array of keys
-                        let values: &[&AnyObject] = &[
-                            // Cast NSFont reference to AnyObject reference
-                            &*(font.as_ref() as *const NSFont as *const AnyObject),
-                            // Cast NSColor reference to AnyObject reference
-                            &*(text_color.as_ref() as *const NSColor as *const AnyObject),
-                        ];
-                        let attributes = NSDictionary::from_slices(keys, values); // Create dictionary from slices
-
-                        // Mesure la taille du caractère
-                        // Measure character size
-                        let char_size: NSSize = ns_char.sizeWithAttributes(Some(&attributes));
-
-                        // Crée une transformation pour positionner et tourner le caractère
-                        // Create a transform to position and rotate the character
-                        let transform = NSAffineTransform::transform(); // Create identity transform
-                        // Déplace à la position sur l'arc
-                        // Translate to position on the arc
-                        transform.translateXBy_yBy(char_x, char_y);
-
-                        // Tourne pour suivre la tangente de l'arc selon fg_mode
-                        // Rotate to follow the arc tangent based on fg_mode
-                        let rotation_angle = if fg_mode {
-                            // Arc du haut: texte orienté vers l'extérieur (lettres droites vues du centre)
-                            // Top arc: text oriented outward (letters upright when viewed from center)
-                            angle - std::f64::consts::PI / 2.0
-                        } else {
-                            // Arc du bas: texte orienté vers l'extérieur (lettres droites vues du centre)
-                            // Bottom arc: text oriented outward (letters upright when viewed from center)
-                            // On ajoute PI pour retourner le texte de 180°
-                            // Add PI to flip the text 180°
-                            angle + std::f64::consts::PI / 2.0
-                        };
-                        transform.rotateByRadians(rotation_angle); // Apply rotation
-
-                        // Applique la transformation
-                        // Apply the transform
-                        transform.concat();
-
-                        // Dessine le caractère (décalé pour le centrer dans l'épaisseur de la bordure)
-                        // Draw the character (offset to center it within the border thickness)
-                        // Décalage X: centrer horizontalement (-width/2)
-                        // X offset: center horizontally (-width/2)
-                        // Décalage Y: centrer verticalement dans la bordure (-height/2)
-                        // Y offset: center vertically within border (-height/2)
-                        let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
-                        ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes)); // Draw the character
-
-                        // Inverse la transformation pour le prochain caractère
-                        // Invert the transform for the next character
-                        let inverse = transform.copy(); // Copy the transform
-                        inverse.invert(); // Invert it
-                        inverse.concat(); // Apply the inverse
-                    }
-
-                    // Restaure l'état graphique
-                    NSGraphicsContext::restoreGraphicsState_class();
+                    // Dessine le texte de la couleur actuelle (avec badge C si mode continue)
+                    draw_arc_text(
+                        &label,
+                        center_x, center_y,
+                        border_radius,
+                        fg_mode,
+                        &font,
+                        &text_color,
+                        is_continue_mode, // Badge C si mode continue activé
+                    );
                 }
             }
         }
     }
+}
+
+/// Dessine du texte en arc autour d'un cercle
+/// Draw text along an arc around a circle
+///
+/// # Arguments
+/// * `text` - Le texte à dessiner
+/// * `center_x`, `center_y` - Centre du cercle
+/// * `radius` - Rayon de l'arc de texte
+/// * `is_top_arc` - true pour arc du haut, false pour arc du bas
+/// * `font` - Police à utiliser
+/// * `text_color` - Couleur du texte
+/// * `show_badge` - Afficher le badge "C" à la fin
+fn draw_arc_text(
+    text: &str,
+    center_x: f64,
+    center_y: f64,
+    radius: f64,
+    is_top_arc: bool,
+    font: &NSFont,
+    text_color: &NSColor,
+    show_badge: bool,
+) {
+    use objc2_foundation::NSDictionary;
+    use objc2::runtime::AnyObject;
+    
+    // Nombre de caractères + espace pour badge si nécessaire
+    // Character count + space for badge if needed
+    let badge_extra_chars = if show_badge { 2.0 } else { 0.0 };
+    let char_count = text.len() as f64 + badge_extra_chars;
+    
+    // Calcule l'angle entre chaque caractère
+    // Calculate angle between each character
+    let angle_step = CHAR_SPACING_PIXELS / radius;
+    
+    // Arc total occupé par le texte
+    // Total arc occupied by text
+    let total_arc = angle_step * (char_count - 1.0);
+    
+    // Angle de départ selon l'arc (haut ou bas)
+    // Start angle based on arc (top or bottom)
+    let text_start_angle: f64 = if is_top_arc {
+        std::f64::consts::PI / 2.0 + total_arc / 2.0
+    } else {
+        -std::f64::consts::PI / 2.0 - total_arc / 2.0
+    };
+
+    // Sauvegarde l'état graphique
+    // Save graphics state
+    NSGraphicsContext::saveGraphicsState_class();
+
+    // Index de caractère courant
+    // Current character index
+    let mut char_index: f64 = 0.0;
+
+    // Dessine chaque caractère du texte
+    // Draw each character of the text
+    for c in text.chars() {
+        // Angle pour ce caractère
+        // Angle for this character
+        let angle = if is_top_arc {
+            text_start_angle - angle_step * char_index
+        } else {
+            text_start_angle + angle_step * char_index
+        };
+
+        char_index += 1.0;
+
+        // Position sur l'arc
+        // Position on the arc
+        let char_x = center_x + radius * angle.cos();
+        let char_y = center_y + radius * angle.sin();
+
+        // Convertit le caractère en NSString
+        // Convert character to NSString
+        let char_str = c.to_string();
+        let ns_char = NSString::from_str(&char_str);
+
+        // Crée le dictionnaire d'attributs pour le texte
+        // Create the attribute dictionary for text
+        let font_attr_key = NSString::from_str("NSFont");
+        let color_attr_key = NSString::from_str("NSColor");
+        let keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
+        let values: &[&AnyObject] = unsafe {
+            &[
+                &*(font as *const NSFont as *const AnyObject),
+                &*(text_color as *const NSColor as *const AnyObject),
+            ]
+        };
+        let attributes = NSDictionary::from_slices(keys, values);
+
+        // Mesure la taille du caractère
+        // Measure character size
+        let char_size: NSSize = unsafe { ns_char.sizeWithAttributes(Some(&attributes)) };
+
+        // Crée une transformation pour positionner et tourner le caractère
+        // Create a transform to position and rotate the character
+        let transform = NSAffineTransform::transform();
+        transform.translateXBy_yBy(char_x, char_y);
+
+        // Rotation selon l'arc
+        // Rotation based on arc
+        let rotation_angle = if is_top_arc {
+            angle - std::f64::consts::PI / 2.0
+        } else {
+            angle + std::f64::consts::PI / 2.0
+        };
+        transform.rotateByRadians(rotation_angle);
+        transform.concat();
+
+        // Dessine le caractère centré
+        // Draw the character centered
+        let draw_point = NSPoint::new(-char_size.width / 2.0, -char_size.height / 2.0);
+        unsafe { ns_char.drawAtPoint_withAttributes(draw_point, Some(&attributes)) };
+
+        // Inverse la transformation
+        // Invert the transform
+        let inverse = transform.copy();
+        inverse.invert();
+        inverse.concat();
+    }
+
+    // Dessine le badge "C" à la fin si demandé
+    // Draw the "C" badge at the end if requested
+    if show_badge {
+        // Avance d'un espace
+        // Advance by one space
+        char_index += 1.0;
+        
+        // Angle pour le badge (après le texte)
+        // Angle for the badge (after the text)
+        let badge_angle = if is_top_arc {
+            text_start_angle - angle_step * char_index
+        } else {
+            text_start_angle + angle_step * char_index
+        };
+
+        // Position du badge sur l'arc
+        // Badge position on the arc
+        let badge_x = center_x + radius * badge_angle.cos();
+        let badge_y = center_y + radius * badge_angle.sin();
+
+        // Taille du badge
+        // Badge size
+        let badge_radius = HEX_FONT_SIZE * 0.7;
+
+        // Dessine le cercle rouge de fond
+        // Draw the red background circle
+        let badge_rect = NSRect::new(
+            NSPoint::new(badge_x - badge_radius, badge_y - badge_radius),
+            NSSize::new(badge_radius * 2.0, badge_radius * 2.0)
+        );
+        let red_color = NSColor::colorWithCalibratedRed_green_blue_alpha(0.9, 0.1, 0.1, 1.0);
+        red_color.setFill();
+        let badge_circle = NSBezierPath::bezierPathWithOvalInRect(badge_rect);
+        badge_circle.fill();
+
+        // Dessine la lettre "C" en blanc
+        // Draw the letter "C" in white
+        let white_color = NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0);
+        let ns_c = NSString::from_str("C");
+
+        let font_attr_key = NSString::from_str("NSFont");
+        let color_attr_key = NSString::from_str("NSColor");
+        let badge_keys: &[&NSString] = &[&font_attr_key, &color_attr_key];
+        let badge_values: &[&AnyObject] = unsafe {
+            &[
+                &*(font as *const NSFont as *const AnyObject),
+                &*(white_color.as_ref() as *const NSColor as *const AnyObject),
+            ]
+        };
+        let badge_attributes = NSDictionary::from_slices(badge_keys, badge_values);
+
+        let c_size: NSSize = unsafe { ns_c.sizeWithAttributes(Some(&badge_attributes)) };
+
+        let badge_transform = NSAffineTransform::transform();
+        badge_transform.translateXBy_yBy(badge_x, badge_y);
+
+        let badge_rotation = if is_top_arc {
+            badge_angle - std::f64::consts::PI / 2.0
+        } else {
+            badge_angle + std::f64::consts::PI / 2.0
+        };
+        badge_transform.rotateByRadians(badge_rotation);
+        badge_transform.concat();
+
+        let c_draw_point = NSPoint::new(-c_size.width / 2.0, -c_size.height / 2.0);
+        unsafe { ns_c.drawAtPoint_withAttributes(c_draw_point, Some(&badge_attributes)) };
+
+        let badge_inverse = badge_transform.copy();
+        badge_inverse.invert();
+        badge_inverse.concat();
+    }
+
+    // Restaure l'état graphique
+    // Restore graphics state
+    NSGraphicsContext::restoreGraphicsState_class();
 }
