@@ -236,34 +236,41 @@ define_class!(
                 // Convert window coordinates to screen coordinates
                 let screen_location: NSPoint = window.convertPointToScreen(location);
 
-                // Get the pixel color at the cursor position
-                if let Some((r, g, b)) = get_pixel_color(screen_location.x, screen_location.y) {
-                    // Convert float values [0.0-1.0] to integers [0-255]
-                    let r_int = (r * 255.0) as u8;
-                    let g_int = (g * 255.0) as u8;
-                    let b_int = (b * 255.0) as u8;
+                // Get the screen scale factor (for Retina)
+                let scale_factor: f64 = if let Some(screen) = window.screen() {
+                    screen.backingScaleFactor() // 2.0 for Retina, 1.0 otherwise
+                } else {
+                    1.0 // Default value if no screen
+                };
 
+                // Récupère le nombre de pixels capturés pour la taille de capture
+                // Get captured pixels count for capture size
+                let captured_pixels = match CURRENT_CAPTURED_PIXELS.lock() {
+                    Ok(p) => *p,
+                    Err(_) => CAPTURED_PIXELS,
+                };
+                
+                // Taille de capture en points (ajustée pour Retina)
+                // Capture size in points (adjusted for Retina)
+                let capture_size = captured_pixels / scale_factor;
+
+                // Capture la zone et extrait la couleur du pixel central
+                // Capture the area and extract the center pixel color
+                if let Some((_image, r, g, b)) = capture_and_get_center_color(screen_location.x, screen_location.y, capture_size, captured_pixels) {
                     // Format the color in hexadecimal (#RRGGBB)
-                    let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+                    let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
 
                     // Update the global state
                     if let Ok(mut state) = MOUSE_STATE.lock() {
-                        // Get the screen scale factor (for Retina)
-                        let scale_factor: f64 = if let Some(screen) = window.screen() {
-                            screen.backingScaleFactor() // 2.0 for Retina, 1.0 otherwise
-                        } else {
-                            1.0 // Default value if no screen
-                        };
-
                         // Create the new state structure
                         *state = Some(MouseColorInfo {
                             x: location.x,           // X position in window
                             y: location.y,           // Y position in window
                             screen_x: screen_location.x, // X position on screen
                             screen_y: screen_location.y, // Y position on screen
-                            r: r_int,                // Red component [0-255]
-                            g: g_int,                // Green component [0-255]
-                            b: b_int,                // Blue component [0-255]
+                            r,                       // Red component [0-255]
+                            g,                       // Green component [0-255]
+                            b,                       // Blue component [0-255]
                             hex_color: hex_color.clone(), // Hex code "#RRGGBB"
                             scale_factor,            // Retina scale factor
                         });
@@ -343,8 +350,26 @@ define_class!(
             // Check if Shift is pressed
             // In objc2-app-kit 0.3, the constant is NSEventModifierFlags::Shift
             let shift_pressed = modifier_flags.contains(NSEventModifierFlags::Shift);
-            // Determine movement distance (50px if Shift, 1px otherwise)
-            let move_amount = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
+            
+            // Get the scale factor to adjust movement for Retina displays
+            // Sur Retina (scale_factor=2.0), 1 pixel = 0.5 point
+            // On Retina (scale_factor=2.0), 1 pixel = 0.5 point
+            let scale_factor = if let Ok(state) = MOUSE_STATE.lock() {
+                if let Some(ref info) = *state {
+                    info.scale_factor
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            
+            // Determine movement distance in points
+            // 1 pixel = 1/scale_factor points
+            // Sans Shift: 1 pixel, avec Shift: SHIFT_MOVE_PIXELS pixels
+            // Without Shift: 1 pixel, with Shift: SHIFT_MOVE_PIXELS pixels
+            let pixels_to_move = if shift_pressed { SHIFT_MOVE_PIXELS } else { 1.0 };
+            let move_amount = pixels_to_move / scale_factor;
 
             // Key codes: ESC = 53, Enter/Return = 36, C = 8, I = 34, O = 31
             if key_code == 53 {
@@ -439,34 +464,58 @@ define_class!(
                     // Move the cursor and update the state
                     if let Ok(state) = MOUSE_STATE.lock() {
                         if let Some(ref info) = *state {
-                            // Calculate the new position
+                            // Calculate the new position (in points)
                             let new_x = info.screen_x + dx;
                             let new_y = info.screen_y + dy;
 
-                            // Get the screen height for coordinate conversion
-                            let main_display = CGDisplay::main();
-                            let screen_height = main_display.pixels_high() as f64;
+                            // Get scale factor for pixel conversion
+                            let scale_factor = info.scale_factor;
 
-                            // Convert Cocoa coordinates to Core Graphics coordinates
-                            // Cocoa: origin at bottom left
-                            // Core Graphics: origin at top left
-                            let cg_y = screen_height - new_y;
+                            // Récupère le nombre de pixels capturés pour la taille de capture
+                            // Get captured pixels count for capture size
+                            let captured_pixels = match CURRENT_CAPTURED_PIXELS.lock() {
+                                Ok(p) => *p,
+                                Err(_) => CAPTURED_PIXELS,
+                            };
+                            
+                            // Taille de capture en points (ajustée pour Retina)
+                            // Capture size in points (adjusted for Retina)
+                            let capture_size = captured_pixels / scale_factor;
 
-                            // Move the mouse cursor to the new position
+                            // Get the screen height in points for coordinate conversion
+                            // Récupère la hauteur de l'écran en points pour la conversion
+                            let screen_height_points = if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
+                                if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                                    main_screen.frame().size.height
+                                } else {
+                                    let main_display = CGDisplay::main();
+                                    main_display.pixels_high() as f64 / scale_factor
+                                }
+                            } else {
+                                let main_display = CGDisplay::main();
+                                main_display.pixels_high() as f64 / scale_factor
+                            };
+
+                            // Convert Cocoa coordinates (origin bottom-left, in points) to 
+                            // Core Graphics warp coordinates (origin top-left, in PIXELS)
+                            // warp_mouse_cursor_position uses PIXELS, not points!
+                            // Convertit les coordonnées Cocoa (origine en bas, en points) vers
+                            // les coordonnées warp de Core Graphics (origine en haut, en PIXELS)
+                            let cg_x = new_x * scale_factor;
+                            let cg_y = (screen_height_points - new_y) * scale_factor;
+
+                            // Move the mouse cursor to the new position (in pixels)
                             let _ = CGDisplay::warp_mouse_cursor_position(
-                                core_graphics::geometry::CGPoint::new(new_x, cg_y)
+                                core_graphics::geometry::CGPoint::new(cg_x, cg_y)
                             );
 
                             // Release the lock before getting the new color
                             drop(state);
 
-                            // Get the color at the new position
-                            if let Some((r, g, b)) = get_pixel_color(new_x, new_y) {
-                                let r_int = (r * 255.0) as u8;
-                                let g_int = (g * 255.0) as u8;
-                                let b_int = (b * 255.0) as u8;
-
-                                let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
+                            // Capture la zone et extrait la couleur du pixel central
+                            // Capture the area and extract the center pixel color
+                            if let Some((_image, r, g, b)) = capture_and_get_center_color(new_x, new_y, capture_size, captured_pixels) {
+                                let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
 
                                 // Update the state with the new position and color
                                 if let Ok(mut state) = MOUSE_STATE.lock() {
@@ -475,22 +524,15 @@ define_class!(
                                         let screen_point = NSPoint::new(new_x, new_y);
                                         let window_point: NSPoint = window.convertPointFromScreen(screen_point);
 
-                                        // Get the scale factor
-                                        let scale_factor: f64 = if let Some(screen) = window.screen() {
-                                            screen.backingScaleFactor()
-                                        } else {
-                                            1.0
-                                        };
-
                                         // Update the state
                                         *state = Some(MouseColorInfo {
                                             x: window_point.x,
                                             y: window_point.y,
                                             screen_x: new_x,
                                             screen_y: new_y,
-                                            r: r_int,
-                                            g: g_int,
-                                            b: b_int,
+                                            r,
+                                            g,
+                                            b,
                                             hex_color,
                                             scale_factor,
                                         });
@@ -639,9 +681,9 @@ struct MouseColorInfo {
 /// Capture une zone carrée de pixels autour des coordonnées données
 ///
 /// # Arguments
-/// * `x` - Coordonnée X du centre (coordonnées Cocoa, origine en bas à gauche)
-/// * `y` - Coordonnée Y du centre
-/// * `size` - Taille du carré à capturer (en pixels)
+/// * `x` - Coordonnée X du centre (coordonnées Cocoa en points, origine en bas à gauche)
+/// * `y` - Coordonnée Y du centre (coordonnées Cocoa en points)
+/// * `size` - Taille du carré à capturer (en points)
 ///
 /// # Retourne
 /// * `Some(CGImage)` - L'image capturée si la capture a réussi
@@ -652,19 +694,31 @@ fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
 
     // Récupère l'écran principal
     let main_display = CGDisplay::main();
-    // Récupère la hauteur de l'écran en pixels
-    let screen_height = main_display.pixels_high() as f64;
-    // Convertit Y de Cocoa (bas) vers Core Graphics (haut)
-    let cg_y = screen_height - y;
+    let screen_height_pixels = main_display.pixels_high() as f64;
+    
+    // Récupère la hauteur en points de l'écran principal
+    let main_screen_height_points = if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
+        if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+            main_screen.frame().size.height
+        } else {
+            screen_height_pixels / 2.0 // Default Retina
+        }
+    } else {
+        screen_height_pixels / 2.0 // Default Retina
+    };
+    
+    // Convertit Y de Cocoa (origine en bas) vers CG (origine en haut)
+    let cg_y = main_screen_height_points - y;
 
-    // Arrondit les coordonnées pour éviter les artefacts de sous-pixel
-    let center_x = x.round();
-    let center_y = cg_y.round();
-    let capture_size = size.round();
-    // Calcule la moitié de la taille pour centrer le rectangle
-    let half_size = (capture_size / 2.0).floor();
+    // Coordonnées en points pour CG
+    let center_x = x;
+    let center_y = cg_y;
 
-    // Crée le rectangle de capture centré sur le point
+    // La taille de capture en points
+    let capture_size = size;
+    let half_size = capture_size / 2.0;
+
+    // Crée le rectangle de capture centré sur le point (en points)
     let rect = CGRect::new(
         &CGPointStruct::new(center_x - half_size, center_y - half_size),
         &CGSize::new(capture_size, capture_size)
@@ -674,50 +728,103 @@ fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
     main_display.image_for_rect(rect)
 }
 
-/// Capture la couleur d'un seul pixel aux coordonnées données
+/// Extrait la couleur du pixel central d'une image CGImage
 ///
 /// # Arguments
-/// * `x` - Coordonnée X (coordonnées Cocoa)
-/// * `y` - Coordonnée Y (coordonnées Cocoa)
+/// * `image` - L'image capturée
 ///
 /// # Retourne
-/// * `Some((r, g, b))` - Les composantes RGB normalisées [0.0-1.0]
-/// * `None` - Si la capture a échoué
-fn get_pixel_color(x: f64, y: f64) -> Option<(f64, f64, f64)> {
-    use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
-
-    // Récupère l'écran principal et sa hauteur
-    let main_display = CGDisplay::main();
-    let screen_height = main_display.pixels_high() as f64;
-    // Convertit les coordonnées
-    let cg_y = screen_height - y;
-
-    // Arrondit pour cibler un pixel exact
-    let center_x = x.round();
-    let center_y = cg_y.round();
-
-    // Crée un rectangle de 1x1 pixel
-    let rect = CGRect::new(
-        &CGPointStruct::new(center_x, center_y),
-        &CGSize::new(1.0, 1.0)
-    );
-
-    // Capture l'image du pixel
-    let image = main_display.image_for_rect(rect)?;
+/// * `Some((r, g, b))` - Les composantes RGB en u8 [0-255]
+/// * `None` - Si l'extraction a échoué
+fn get_center_pixel_from_image(image: &CGImage, target_pixels: f64) -> Option<(u8, u8, u8)> {
+    // Récupère les dimensions de l'image
+    let img_width = image.width() as f64;
+    let img_height = image.height() as f64;
+    
+    // Calcule le décalage de crop comme dans draw_view
+    // Calculate crop offset like in draw_view
+    // Note: Dans draw_view, crop_x et crop_y sont utilisés pour NSImage.drawInRect:fromRect:
+    // où l'origine est en BAS à gauche (convention Cocoa)
+    // Mais les données CGImage sont stockées avec l'origine en HAUT à gauche
+    // In draw_view, crop_x and crop_y are used for NSImage.drawInRect:fromRect:
+    // where origin is at BOTTOM-left (Cocoa convention)
+    // But CGImage data is stored with origin at TOP-left
+    
+    let crop_x = if img_width > target_pixels {
+        ((img_width - target_pixels) / 2.0).floor()
+    } else {
+        0.0
+    };
+    
+    // Pour NSImage (draw_view), crop_y est depuis le bas
+    // Pour CGImage (données), on doit calculer depuis le haut
+    // For NSImage (draw_view), crop_y is from bottom
+    // For CGImage (data), we need to calculate from top
+    let crop_y_from_bottom = if img_height > target_pixels {
+        ((img_height - target_pixels) / 2.0).floor()
+    } else {
+        0.0
+    };
+    
+    // Taille effective après crop
+    // Effective size after crop
+    let use_width = if img_width > target_pixels { target_pixels } else { img_width };
+    let use_height = if img_height > target_pixels { target_pixels } else { img_height };
+    
+    // Le pixel central en X (même convention)
+    // Center pixel in X (same convention)
+    let center_x = (crop_x + use_width / 2.0).floor() as usize;
+    
+    // Le pixel central en Y : convertir de "depuis le bas" vers "depuis le haut"
+    // Center pixel in Y: convert from "from bottom" to "from top"
+    // Dans NSImage: le centre est à crop_y_from_bottom + use_height/2 depuis le bas
+    // Dans CGImage: on veut la distance depuis le haut
+    // In NSImage: center is at crop_y_from_bottom + use_height/2 from bottom
+    // In CGImage: we want distance from top
+    let center_y_from_bottom = crop_y_from_bottom + use_height / 2.0;
+    let center_y = (img_height - center_y_from_bottom).floor() as usize;
+    
     // Récupère les données brutes de l'image
     let data = image.data();
+    let bytes_per_row = image.bytes_per_row() as usize;
+    let bits_per_pixel = image.bits_per_pixel() as usize;
+    let bytes_per_pixel = bits_per_pixel / 8;
+    
+    // Calcule l'offset du pixel central dans les données
+    let offset = (center_y * bytes_per_row) + (center_x * bytes_per_pixel);
+    
+    // Vérifie qu'on a assez de données
     let data_len = data.len() as usize;
-
-    // Vérifie qu'on a au moins 4 octets (BGRA)
-    if data_len >= 4 {
+    if offset + bytes_per_pixel <= data_len {
         // Les données sont en format BGRA (Blue, Green, Red, Alpha)
-        let b = data[0] as f64 / 255.0; // Bleu normalisé
-        let g = data[1] as f64 / 255.0; // Vert normalisé
-        let r = data[2] as f64 / 255.0; // Rouge normalisé
-        Some((r, g, b)) // Retourne en ordre RGB
+        let b = data[offset];
+        let g = data[offset + 1];
+        let r = data[offset + 2];
+        Some((r, g, b))
     } else {
-        None // Pas assez de données
+        None
     }
+}
+
+/// Capture une zone et retourne à la fois l'image et la couleur du pixel central
+///
+/// # Arguments
+/// * `x` - Coordonnée X du centre (coordonnées Cocoa en points)
+/// * `y` - Coordonnée Y du centre (coordonnées Cocoa en points)
+/// * `size` - Taille du carré à capturer (en points)
+/// * `target_pixels` - Nombre de pixels cibles pour le crop (utilisé pour trouver le centre)
+///
+/// # Retourne
+/// * `Some((CGImage, r, g, b))` - L'image et les composantes RGB du pixel central
+/// * `None` - Si la capture a échoué
+fn capture_and_get_center_color(x: f64, y: f64, size: f64, target_pixels: f64) -> Option<(CGImage, u8, u8, u8)> {
+    // Capture la zone
+    let image = capture_zoom_area(x, y, size)?;
+    
+    // Extrait la couleur du pixel central (en tenant compte du crop)
+    let (r, g, b) = get_center_pixel_from_image(&image, target_pixels)?;
+    
+    Some((image, r, g, b))
 }
 
 // =============================================================================
@@ -922,30 +1029,47 @@ pub fn run(fg: bool) -> ColorPickerResult {
         if let Ok(source) = CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
             let cg_event = CGEvent::new(source);
             if let Ok(event) = cg_event {
+                // CGEvent.location() retourne des coordonnées en POINTS (Global Display Coordinates)
+                // avec l'origine en haut à gauche
+                // CGEvent.location() returns coordinates in POINTS (Global Display Coordinates)
+                // with origin at top-left
                 let cg_point = event.location();
                 
-                // Convertit les coordonnées CG (origine en haut) vers Cocoa (origine en bas)
-                // Convert CG coordinates (origin at top) to Cocoa (origin at bottom)
-                let main_display = CGDisplay::main();
-                let screen_height = main_display.pixels_high() as f64;
-                let cocoa_x = cg_point.x;
-                let cocoa_y = screen_height - cg_point.y;
+                // Récupère le scale factor et la hauteur en points
+                // Get the scale factor and height in points
+                let scale_factor = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                    main_screen.backingScaleFactor()
+                } else {
+                    2.0 // Default to Retina
+                };
                 
-                // Récupère la couleur du pixel à cette position
-                // Get the pixel color at this position
-                if let Some((r, g, b)) = get_pixel_color(cocoa_x, cocoa_y) {
-                    let r_int = (r * 255.0) as u8;
-                    let g_int = (g * 255.0) as u8;
-                    let b_int = (b * 255.0) as u8;
-                    let hex_color = format!("#{:02X}{:02X}{:02X}", r_int, g_int, b_int);
-                    
-                    // Récupère le scale factor de l'écran principal
-                    // Get the scale factor of the main screen
-                    let scale_factor = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
-                        main_screen.backingScaleFactor()
-                    } else {
-                        2.0 // Default to Retina
-                    };
+                let screen_height_points = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                    main_screen.frame().size.height
+                } else {
+                    let main_display = CGDisplay::main();
+                    main_display.pixels_high() as f64 / scale_factor
+                };
+                
+                // Convertit CG (origine en haut) vers Cocoa (origine en bas)
+                // Convert CG (origin at top) to Cocoa (origin at bottom)
+                let cocoa_x = cg_point.x;
+                let cocoa_y = screen_height_points - cg_point.y;
+                
+                // Récupère le nombre de pixels capturés pour la taille de capture
+                // Get captured pixels count for capture size
+                let captured_pixels = match CURRENT_CAPTURED_PIXELS.lock() {
+                    Ok(p) => *p,
+                    Err(_) => CAPTURED_PIXELS,
+                };
+                
+                // Taille de capture en points (ajustée pour Retina)
+                // Capture size in points (adjusted for Retina)
+                let capture_size = captured_pixels / scale_factor;
+                
+                // Capture la zone et extrait la couleur du pixel central
+                // Capture the area and extract the center pixel color
+                if let Some((_image, r, g, b)) = capture_and_get_center_color(cocoa_x, cocoa_y, capture_size, captured_pixels) {
+                    let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
                     
                     // Initialise MOUSE_STATE
                     // Initialize MOUSE_STATE
@@ -955,9 +1079,9 @@ pub fn run(fg: bool) -> ColorPickerResult {
                             y: cocoa_y,        // Position Y dans les coordonnées de la fenêtre
                             screen_x: cocoa_x, // Position X dans les coordonnées de l'écran
                             screen_y: cocoa_y, // Position Y dans les coordonnées de l'écran
-                            r: r_int,
-                            g: g_int,
-                            b: b_int,
+                            r,
+                            g,
+                            b,
                             hex_color,
                             scale_factor,
                         });
