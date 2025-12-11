@@ -42,21 +42,18 @@ fn main() {
     // Default fg=true (top arc), use --bg for bottom arc
     let args: Vec<String> = std::env::args().collect(); // Collect command line arguments
     let fg = !args.contains(&"--bg".to_string()); // fg=true unless --bg is passed
-    
+
     // Variable to store the result from the color picker
     // Variable pour stocker le résultat du color picker
+    
     #[cfg(target_os = "macos")]
     let result = macos::run(fg); // Call macOS implementation with fg parameter
 
     #[cfg(target_os = "windows")]
     let result = {
-        let _ = fg; // Suppress unused variable warning
-        // Windows doesn't support fg mode yet, return empty result
-        // Windows ne supporte pas encore le mode fg, retourne un résultat vide
-        macos::ColorPickerResult {
-            foreground: windows::run(), // Use old API for now
-            background: None,
-        }
+        // Windows supporte maintenant le mode fg
+        // Windows now supports fg mode
+        windows::run(fg) // Call Windows implementation with fg parameter
     };
 
     #[cfg(target_os = "linux")]
@@ -75,7 +72,7 @@ fn main() {
         eprintln!("Unsupported platform"); // Print error message
         std::process::exit(1); // Exit with error code
     }
-    
+
     // Display the result based on which field is populated
     // Affiche le résultat selon le champ rempli
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -86,14 +83,14 @@ fn main() {
             let hex = format_color(r, g, b); // Format as hex
             println!("Foreground: RGB({}, {}, {}) | HEX: {}", r, g, b, hex); // Print foreground
         }
-        
+
         // Check if background color was selected
         // Vérifie si une couleur d'arrière-plan a été sélectionnée
         if let Some((r, g, b)) = result.background {
             let hex = format_color(r, g, b); // Format as hex
             println!("Background: RGB({}, {}, {}) | HEX: {}", r, g, b, hex); // Print background
         }
-        
+
         // Exit with error if no color was selected (user pressed ESC)
         // Quitte avec erreur si aucune couleur n'a été sélectionnée (utilisateur a appuyé ESC)
         if result.foreground.is_none() && result.background.is_none() {
