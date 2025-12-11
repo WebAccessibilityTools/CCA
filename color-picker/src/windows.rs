@@ -1,10 +1,13 @@
 // =============================================================================
-// COLOR PICKER - VERSION WINDOWS (OPTIMISÉE)
+// COLOR PICKER - VERSION WINDOWS
+// =============================================================================
+// Fenêtre plein écran affichant la capture d'écran + loupe
+// Fullscreen window displaying screen capture + magnifier
 // =============================================================================
 
 use crate::config::{
-    BORDER_WIDTH, HEX_FONT_SIZE, CAPTURED_PIXELS, INITIAL_ZOOM_FACTOR,
-    SHIFT_MOVE_PIXELS, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, CHAR_SPACING_PIXELS,
+    BORDER_WIDTH, CAPTURED_PIXELS, INITIAL_ZOOM_FACTOR,
+    SHIFT_MOVE_PIXELS, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
 };
 
 use windows::{
@@ -29,9 +32,8 @@ use std::sync::Mutex;
 const CAPTURED_PIXELS_MIN: f64 = 9.0;
 const CAPTURED_PIXELS_MAX: f64 = 21.0;
 const CAPTURED_PIXELS_STEP: f64 = 2.0;
-const WINDOW_CLASS_NAME: &str = "ColorPickerClass";
+const WINDOW_CLASS: &str = "ColorPickerFullscreen";
 const TIMER_ID: usize = 1;
-const TIMER_INTERVAL: u32 = 16; // ~60 FPS
 
 // =============================================================================
 // STRUCTURES
@@ -47,224 +49,364 @@ pub struct ColorPickerResult {
 // ÉTAT GLOBAL
 // =============================================================================
 
-static CURSOR_X: Mutex<i32> = Mutex::new(0);
-static CURSOR_Y: Mutex<i32> = Mutex::new(0);
-static COLOR_R: Mutex<u8> = Mutex::new(0);
-static COLOR_G: Mutex<u8> = Mutex::new(0);
-static COLOR_B: Mutex<u8> = Mutex::new(0);
-static FG_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
-static BG_COLOR: Mutex<Option<(u8, u8, u8)>> = Mutex::new(None);
-static FG_MODE: Mutex<bool> = Mutex::new(true);
-static CONTINUE_MODE: Mutex<bool> = Mutex::new(false);
-static CURRENT_ZOOM: Mutex<f64> = Mutex::new(INITIAL_ZOOM_FACTOR);
-static CURRENT_CAPTURED: Mutex<f64> = Mutex::new(CAPTURED_PIXELS);
-static SHOULD_QUIT: Mutex<bool> = Mutex::new(false);
-static SCREEN_CAPTURE: Mutex<Option<ScreenCapture>> = Mutex::new(None);
+static STATE: Mutex<PickerState> = Mutex::new(PickerState::new());
 
-// Structure pour stocker la capture d'écran
-struct ScreenCapture {
-    hdc_mem: HDC,
-    hbitmap: HBITMAP,
-    width: i32,
-    height: i32,
+struct PickerState {
+    cursor_x: i32,
+    cursor_y: i32,
+    color: (u8, u8, u8),
+    fg_color: Option<(u8, u8, u8)>,
+    bg_color: Option<(u8, u8, u8)>,
+    fg_mode: bool,
+    continue_mode: bool,
+    zoom: f64,
+    captured: f64,
+    quit: bool,
+    screen_width: i32,
+    screen_height: i32,
 }
 
-// Implémentation de Send pour ScreenCapture (les handles GDI sont thread-safe pour notre usage)
-unsafe impl Send for ScreenCapture {}
+// Handle du bitmap de capture (doit être global pour WM_PAINT)
+static SCREEN_BITMAP: Mutex<Option<isize>> = Mutex::new(None);
+static SCREEN_DATA: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
-// =============================================================================
-// FONCTIONS UTILITAIRES
-// =============================================================================
-
-fn reset_state() {
-    *CURSOR_X.lock().unwrap() = 0;
-    *CURSOR_Y.lock().unwrap() = 0;
-    *COLOR_R.lock().unwrap() = 0;
-    *COLOR_G.lock().unwrap() = 0;
-    *COLOR_B.lock().unwrap() = 0;
-    *FG_COLOR.lock().unwrap() = None;
-    *BG_COLOR.lock().unwrap() = None;
-    *FG_MODE.lock().unwrap() = true;
-    *CONTINUE_MODE.lock().unwrap() = false;
-    *CURRENT_ZOOM.lock().unwrap() = INITIAL_ZOOM_FACTOR;
-    *CURRENT_CAPTURED.lock().unwrap() = CAPTURED_PIXELS;
-    *SHOULD_QUIT.lock().unwrap() = false;
-}
-
-fn capture_full_screen() {
-    unsafe {
-        let hdc_screen = GetDC(HWND::default());
-        let width = GetSystemMetrics(SM_CXSCREEN);
-        let height = GetSystemMetrics(SM_CYSCREEN);
-        
-        let hdc_mem = CreateCompatibleDC(hdc_screen);
-        let hbitmap = CreateCompatibleBitmap(hdc_screen, width, height);
-        SelectObject(hdc_mem, hbitmap);
-        
-        // Capture tout l'écran d'un coup
-        BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, 0, 0, SRCCOPY);
-        
-        ReleaseDC(HWND::default(), hdc_screen);
-        
-        if let Ok(mut cap) = SCREEN_CAPTURE.lock() {
-            // Libère l'ancienne capture si elle existe
-            if let Some(old) = cap.take() {
-                DeleteObject(old.hbitmap);
-                DeleteDC(old.hdc_mem);
-            }
-            *cap = Some(ScreenCapture { hdc_mem, hbitmap, width, height });
+impl PickerState {
+    const fn new() -> Self {
+        Self {
+            cursor_x: 0,
+            cursor_y: 0,
+            color: (0, 0, 0),
+            fg_color: None,
+            bg_color: None,
+            fg_mode: true,
+            continue_mode: false,
+            zoom: INITIAL_ZOOM_FACTOR,
+            captured: CAPTURED_PIXELS,
+            quit: false,
+            screen_width: 0,
+            screen_height: 0,
         }
+    }
+    
+    fn reset(&mut self) {
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.color = (0, 0, 0);
+        self.fg_color = None;
+        self.bg_color = None;
+        self.fg_mode = true;
+        self.continue_mode = false;
+        self.zoom = INITIAL_ZOOM_FACTOR;
+        self.captured = CAPTURED_PIXELS;
+        self.quit = false;
     }
 }
 
-fn get_pixel_from_capture(x: i32, y: i32) -> (u8, u8, u8) {
-    if let Ok(cap) = SCREEN_CAPTURE.lock() {
-        if let Some(ref capture) = *cap {
-            if x >= 0 && x < capture.width && y >= 0 && y < capture.height {
-                unsafe {
-                    let color = GetPixel(capture.hdc_mem, x, y);
-                    let r = (color.0 & 0xFF) as u8;
-                    let g = ((color.0 >> 8) & 0xFF) as u8;
-                    let b = ((color.0 >> 16) & 0xFF) as u8;
-                    return (r, g, b);
-                }
+// =============================================================================
+// CAPTURE D'ÉCRAN
+// =============================================================================
+
+fn capture_screen() {
+    unsafe {
+        let width = GetSystemMetrics(SM_CXSCREEN);
+        let height = GetSystemMetrics(SM_CYSCREEN);
+        
+        let hdc_screen = GetDC(HWND::default());
+        let hdc_mem = CreateCompatibleDC(hdc_screen);
+        
+        // Crée un bitmap compatible pour le fond
+        // Create a compatible bitmap for the background
+        let hbitmap = CreateCompatibleBitmap(hdc_screen, width, height);
+        
+        if !hbitmap.is_invalid() {
+            SelectObject(hdc_mem, hbitmap);
+            let _ = BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, 0, 0, SRCCOPY);
+            
+            // Stocke le handle du bitmap
+            if let Ok(mut bmp) = SCREEN_BITMAP.lock() {
+                *bmp = Some(hbitmap.0 as isize);
+            }
+            
+            // Capture aussi les données brutes pour lire les couleurs
+            let mut bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height, // Top-down
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            
+            let mut data: Vec<u8> = vec![0; (width * height * 4) as usize];
+            let _ = GetDIBits(
+                hdc_mem,
+                hbitmap,
+                0,
+                height as u32,
+                Some(data.as_mut_ptr() as *mut _),
+                &mut bmi,
+                DIB_RGB_COLORS,
+            );
+            
+            if let Ok(mut screen_data) = SCREEN_DATA.lock() {
+                *screen_data = data;
+            }
+            
+            if let Ok(mut state) = STATE.lock() {
+                state.screen_width = width;
+                state.screen_height = height;
+            }
+        }
+        
+        let _ = DeleteDC(hdc_mem);
+        let _ = ReleaseDC(HWND::default(), hdc_screen);
+    }
+}
+
+fn cleanup_screen_bitmap() {
+    if let Ok(mut bmp) = SCREEN_BITMAP.lock() {
+        if let Some(h) = bmp.take() {
+            unsafe {
+                let _ = DeleteObject(HBITMAP(h as *mut _));
+            }
+        }
+    }
+    if let Ok(mut data) = SCREEN_DATA.lock() {
+        data.clear();
+    }
+}
+
+fn get_pixel_color(x: i32, y: i32) -> (u8, u8, u8) {
+    let (width, height) = {
+        if let Ok(state) = STATE.lock() {
+            (state.screen_width, state.screen_height)
+        } else {
+            return (0, 0, 0);
+        }
+    };
+    
+    if let Ok(data) = SCREEN_DATA.lock() {
+        if x >= 0 && x < width && y >= 0 && y < height {
+            let idx = ((y * width + x) * 4) as usize;
+            if idx + 2 < data.len() {
+                let b = data[idx];
+                let g = data[idx + 1];
+                let r = data[idx + 2];
+                return (r, g, b);
             }
         }
     }
     (0, 0, 0)
 }
 
-fn update_cursor_and_color() {
-    unsafe {
-        let mut pt = POINT::default();
-        GetCursorPos(&mut pt);
-        *CURSOR_X.lock().unwrap() = pt.x;
-        *CURSOR_Y.lock().unwrap() = pt.y;
-        
-        let (r, g, b) = get_pixel_from_capture(pt.x, pt.y);
-        *COLOR_R.lock().unwrap() = r;
-        *COLOR_G.lock().unwrap() = g;
-        *COLOR_B.lock().unwrap() = b;
+// =============================================================================
+// MISE À JOUR
+// =============================================================================
+
+fn update_cursor_pos(x: i32, y: i32) {
+    let color = get_pixel_color(x, y);
+    if let Ok(mut state) = STATE.lock() {
+        state.cursor_x = x;
+        state.cursor_y = y;
+        state.color = color;
     }
-}
-
-fn get_window_size() -> i32 {
-    let zoom = *CURRENT_ZOOM.lock().unwrap();
-    let captured = *CURRENT_CAPTURED.lock().unwrap();
-    (captured * zoom) as i32 + BORDER_WIDTH as i32 * 2 + 40
-}
-
-fn stop_app() {
-    *SHOULD_QUIT.lock().unwrap() = true;
-    unsafe { PostQuitMessage(0); }
 }
 
 // =============================================================================
 // DESSIN
 // =============================================================================
 
-fn draw_picker(hwnd: HWND, hdc: HDC) {
-    let zoom = *CURRENT_ZOOM.lock().unwrap();
-    let captured = *CURRENT_CAPTURED.lock().unwrap() as i32;
-    let cursor_x = *CURSOR_X.lock().unwrap();
-    let cursor_y = *CURSOR_Y.lock().unwrap();
-    let r = *COLOR_R.lock().unwrap();
-    let g = *COLOR_G.lock().unwrap();
-    let b = *COLOR_B.lock().unwrap();
-    let fg_mode = *FG_MODE.lock().unwrap();
+fn paint_window(hwnd: HWND, hdc: HDC) {
+    let (cursor_x, cursor_y, color, fg_mode, continue_mode, zoom, captured, 
+         screen_width, screen_height) = {
+        let state = match STATE.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        (
+            state.cursor_x, state.cursor_y, state.color,
+            state.fg_mode, state.continue_mode,
+            state.zoom, state.captured,
+            state.screen_width, state.screen_height,
+        )
+    };
     
-    let zoom_int = zoom as i32;
-    let mag_size = captured * zoom_int;
-    let half_captured = captured / 2;
+    let screen_data = match SCREEN_DATA.lock() {
+        Ok(d) => d.clone(),
+        Err(_) => return,
+    };
+    
+    if screen_data.is_empty() { return; }
     
     unsafe {
-        let mut rect = RECT::default();
-        GetClientRect(hwnd, &mut rect);
-        let win_w = rect.right;
-        let win_h = rect.bottom;
+        // Crée un buffer double pour éviter le scintillement
+        // Create a double buffer to avoid flickering
+        let hdc_mem = CreateCompatibleDC(hdc);
+        let hbitmap = CreateCompatibleBitmap(hdc, screen_width, screen_height);
         
-        // Fond blanc
-        let white_brush = CreateSolidBrush(COLORREF(0xFFFFFF));
-        FillRect(hdc, &rect, white_brush);
-        DeleteObject(white_brush);
+        if hbitmap.is_invalid() {
+            let _ = DeleteDC(hdc_mem);
+            return;
+        }
         
-        // Centre de la fenêtre
-        let cx = win_w / 2;
-        let cy = win_h / 2;
-        let mag_x = cx - mag_size / 2;
-        let mag_y = cy - mag_size / 2;
+        SelectObject(hdc_mem, hbitmap);
         
-        // Dessine les pixels zoomés depuis la capture
-        if let Ok(cap) = SCREEN_CAPTURE.lock() {
-            if let Some(ref capture) = *cap {
-                for py in 0..captured {
-                    for px in 0..captured {
-                        let src_x = cursor_x - half_captured + px;
-                        let src_y = cursor_y - half_captured + py;
-                        
-                        let color = if src_x >= 0 && src_x < capture.width && src_y >= 0 && src_y < capture.height {
-                            GetPixel(capture.hdc_mem, src_x, src_y)
-                        } else {
-                            COLORREF(0)
-                        };
-                        
-                        let brush = CreateSolidBrush(color);
-                        let dest = RECT {
-                            left: mag_x + px * zoom_int,
-                            top: mag_y + py * zoom_int,
-                            right: mag_x + (px + 1) * zoom_int,
-                            bottom: mag_y + (py + 1) * zoom_int,
-                        };
-                        FillRect(hdc, &dest, brush);
-                        DeleteObject(brush);
-                    }
-                }
+        // Dessine le fond (capture d'écran)
+        if let Ok(bmp) = SCREEN_BITMAP.lock() {
+            if let Some(h) = *bmp {
+                let hdc_src = CreateCompatibleDC(hdc);
+                SelectObject(hdc_src, HBITMAP(h as *mut _));
+                let _ = BitBlt(hdc_mem, 0, 0, screen_width, screen_height, hdc_src, 0, 0, SRCCOPY);
+                let _ = DeleteDC(hdc_src);
             }
         }
         
-        // Réticule central
-        let ret_x = mag_x + (captured / 2) * zoom_int;
-        let ret_y = mag_y + (captured / 2) * zoom_int;
-        let pen = CreatePen(PS_SOLID, 2, COLORREF(0x808080));
-        let old_pen = SelectObject(hdc, pen);
+        // Paramètres de la loupe
+        let mag_size = (captured * zoom) as i32;
+        let zoom_i = zoom as i32;
+        let captured_i = captured as i32;
+        let half_cap = captured_i / 2;
+        let border = BORDER_WIDTH as i32;
+        let cx = cursor_x;
+        let cy = cursor_y;
+        let inner_radius = mag_size / 2;
+        let outer_radius = inner_radius + border;
+        
+        // Crée une région circulaire pour la loupe
+        let rgn_outer = CreateEllipticRgn(
+            cx - outer_radius, cy - outer_radius,
+            cx + outer_radius, cy + outer_radius
+        );
+        let rgn_inner = CreateEllipticRgn(
+            cx - inner_radius, cy - inner_radius,
+            cx + inner_radius, cy + inner_radius
+        );
+        
+        // Dessine la bordure colorée (anneau)
+        let (cr, cg, cb) = color;
+        let brush_color = COLORREF(cr as u32 | ((cg as u32) << 8) | ((cb as u32) << 16));
+        let brush = CreateSolidBrush(brush_color);
+        
+        // Soustrait le cercle intérieur pour créer un anneau
+        let rgn_ring = CreateEllipticRgn(0, 0, 1, 1); // Dummy
+        let _ = CombineRgn(rgn_ring, rgn_outer, rgn_inner, RGN_DIFF);
+        let _ = FillRgn(hdc_mem, rgn_ring, brush);
+        
+        let _ = DeleteObject(brush);
+        let _ = DeleteObject(rgn_ring);
+        let _ = DeleteObject(rgn_outer);
+        
+        // Dessine les pixels zoomés dans le cercle intérieur
+        let _ = SelectClipRgn(hdc_mem, rgn_inner);
+        
+        for py in 0..captured_i {
+            for px in 0..captured_i {
+                let src_x = cursor_x - half_cap + px;
+                let src_y = cursor_y - half_cap + py;
+                
+                let (r, g, b) = if src_x >= 0 && src_x < screen_width && src_y >= 0 && src_y < screen_height {
+                    let idx = ((src_y * screen_width + src_x) * 4) as usize;
+                    if idx + 2 < screen_data.len() {
+                        (screen_data[idx + 2], screen_data[idx + 1], screen_data[idx])
+                    } else {
+                        (128, 128, 128)
+                    }
+                } else {
+                    (64, 64, 64)
+                };
+                
+                let dst_x = cx - inner_radius + px * zoom_i;
+                let dst_y = cy - inner_radius + py * zoom_i;
+                
+                let pixel_brush = CreateSolidBrush(COLORREF(r as u32 | ((g as u32) << 8) | ((b as u32) << 16)));
+                let rect = RECT {
+                    left: dst_x,
+                    top: dst_y,
+                    right: dst_x + zoom_i,
+                    bottom: dst_y + zoom_i,
+                };
+                let _ = FillRect(hdc_mem, &rect, pixel_brush);
+                let _ = DeleteObject(pixel_brush);
+            }
+        }
+        
+        // Enlève le clip
+        let _ = SelectClipRgn(hdc_mem, HRGN::default());
+        let _ = DeleteObject(rgn_inner);
+        
+        // Dessine le réticule central
+        let ret_half = zoom_i / 2;
+        let ret_x = cx - ret_half;
+        let ret_y = cy - ret_half;
+        let gray_pen = CreatePen(PS_SOLID, 1, COLORREF(0x606060));
+        let old_pen = SelectObject(hdc_mem, gray_pen);
         let null_brush = GetStockObject(NULL_BRUSH);
-        let old_brush = SelectObject(hdc, null_brush);
-        Rectangle(hdc, ret_x, ret_y, ret_x + zoom_int, ret_y + zoom_int);
-        SelectObject(hdc, old_pen);
-        SelectObject(hdc, old_brush);
-        DeleteObject(pen);
+        let old_brush = SelectObject(hdc_mem, null_brush);
+        let _ = Rectangle(hdc_mem, ret_x, ret_y, ret_x + zoom_i, ret_y + zoom_i);
+        let _ = SelectObject(hdc_mem, old_pen);
+        let _ = SelectObject(hdc_mem, old_brush);
+        let _ = DeleteObject(gray_pen);
         
-        // Bordure colorée (cercle)
-        let color_ref = COLORREF(r as u32 | ((g as u32) << 8) | ((b as u32) << 16));
-        let border_pen = CreatePen(PS_SOLID, BORDER_WIDTH as i32, color_ref);
-        let old_pen2 = SelectObject(hdc, border_pen);
-        let old_brush2 = SelectObject(hdc, null_brush);
-        Ellipse(hdc, mag_x - 5, mag_y - 5, mag_x + mag_size + 5, mag_y + mag_size + 5);
-        SelectObject(hdc, old_pen2);
-        SelectObject(hdc, old_brush2);
-        DeleteObject(border_pen);
+        // Rectangle de texte sous la loupe
+        let text_y = cy + inner_radius + border + 5;
+        let text_h = 22;
+        let text_w = 110;
+        let text_x = cx - text_w / 2;
         
-        // Texte hex
-        let hex = format!("{} #{:02X}{:02X}{:02X}", if fg_mode { "FG" } else { "BG" }, r, g, b);
-        let luminance = 0.299 * (r as f64) + 0.587 * (g as f64) + 0.114 * (b as f64);
-        let text_color = if luminance > 128.0 { COLORREF(0) } else { COLORREF(0xFFFFFF) };
-        
-        // Fond pour le texte
-        let text_bg = CreateSolidBrush(color_ref);
+        let text_brush = CreateSolidBrush(brush_color);
         let text_rect = RECT {
-            left: cx - 60,
-            top: mag_y + mag_size + 15,
-            right: cx + 60,
-            bottom: mag_y + mag_size + 35,
+            left: text_x,
+            top: text_y,
+            right: text_x + text_w,
+            bottom: text_y + text_h,
         };
-        FillRect(hdc, &text_rect, text_bg);
-        DeleteObject(text_bg);
+        let _ = FillRect(hdc_mem, &text_rect, text_brush);
+        let _ = DeleteObject(text_brush);
         
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, text_color);
-        let text_wide: Vec<u16> = hex.encode_utf16().collect();
-        SetTextAlign(hdc, TA_CENTER);
-        TextOutW(hdc, cx, mag_y + mag_size + 17, &text_wide);
+        // Texte
+        let hex_text = format!("{}: #{:02X}{:02X}{:02X}", 
+            if fg_mode { "FG" } else { "BG" }, cr, cg, cb);
+        
+        let lum = 0.299 * (cr as f64) + 0.587 * (cg as f64) + 0.114 * (cb as f64);
+        let text_color = if lum > 128.0 { COLORREF(0) } else { COLORREF(0xFFFFFF) };
+        
+        let _ = SetBkMode(hdc_mem, TRANSPARENT);
+        let _ = SetTextColor(hdc_mem, text_color);
+        let _ = SetTextAlign(hdc_mem, TA_CENTER);
+        
+        let text_wide: Vec<u16> = hex_text.encode_utf16().collect();
+        let _ = TextOutW(hdc_mem, cx, text_y + 3, &text_wide);
+        
+        // Badge mode continue
+        if continue_mode {
+            let badge_x = cx + inner_radius - 5;
+            let badge_y = cy - inner_radius + 5;
+            let badge_r = 10;
+            
+            let red_brush = CreateSolidBrush(COLORREF(0x3232E6)); // Rouge en BGR
+            let rgn_badge = CreateEllipticRgn(
+                badge_x - badge_r, badge_y - badge_r,
+                badge_x + badge_r, badge_y + badge_r
+            );
+            let _ = FillRgn(hdc_mem, rgn_badge, red_brush);
+            let _ = DeleteObject(red_brush);
+            let _ = DeleteObject(rgn_badge);
+            
+            // Lettre C
+            let _ = SetTextColor(hdc_mem, COLORREF(0xFFFFFF));
+            let c_text: Vec<u16> = "C".encode_utf16().collect();
+            let _ = TextOutW(hdc_mem, badge_x, badge_y - 7, &c_text);
+        }
+        
+        // Copie vers l'écran
+        let _ = BitBlt(hdc, 0, 0, screen_width, screen_height, hdc_mem, 0, 0, SRCCOPY);
+        
+        let _ = DeleteObject(hbitmap);
+        let _ = DeleteDC(hdc_mem);
     }
 }
 
@@ -274,55 +416,58 @@ fn draw_picker(hwnd: HWND, hdc: HDC) {
 
 fn handle_key(hwnd: HWND, vk: VIRTUAL_KEY) {
     let shift = unsafe { GetKeyState(VK_SHIFT.0 as i32) < 0 };
-    let amount = if shift { SHIFT_MOVE_PIXELS as i32 } else { 1 };
     
     match vk {
-        VK_ESCAPE => stop_app(),
+        VK_ESCAPE => {
+            if let Ok(mut state) = STATE.lock() {
+                state.quit = true;
+            }
+            unsafe { PostQuitMessage(0); }
+        }
         VK_RETURN | VK_SPACE => select_color(),
         VK_C => {
-            let mut cm = CONTINUE_MODE.lock().unwrap();
-            *cm = !*cm;
+            if let Ok(mut state) = STATE.lock() {
+                state.continue_mode = !state.continue_mode;
+            }
+            unsafe { let _ = InvalidateRect(hwnd, None, FALSE); }
         }
         VK_I => {
-            if shift {
-                let mut c = CURRENT_CAPTURED.lock().unwrap();
-                *c = (*c + CAPTURED_PIXELS_STEP).min(CAPTURED_PIXELS_MAX);
-            } else {
-                let mut z = CURRENT_ZOOM.lock().unwrap();
-                *z = (*z + ZOOM_STEP).min(ZOOM_MAX);
+            if let Ok(mut state) = STATE.lock() {
+                if shift {
+                    state.captured = (state.captured + CAPTURED_PIXELS_STEP).min(CAPTURED_PIXELS_MAX);
+                } else {
+                    state.zoom = (state.zoom + ZOOM_STEP).min(ZOOM_MAX);
+                }
             }
-            resize_window(hwnd);
+            unsafe { let _ = InvalidateRect(hwnd, None, FALSE); }
         }
         VK_O => {
-            if shift {
-                let mut c = CURRENT_CAPTURED.lock().unwrap();
-                *c = (*c - CAPTURED_PIXELS_STEP).max(CAPTURED_PIXELS_MIN);
-            } else {
-                let mut z = CURRENT_ZOOM.lock().unwrap();
-                *z = (*z - ZOOM_STEP).max(ZOOM_MIN);
+            if let Ok(mut state) = STATE.lock() {
+                if shift {
+                    state.captured = (state.captured - CAPTURED_PIXELS_STEP).max(CAPTURED_PIXELS_MIN);
+                } else {
+                    state.zoom = (state.zoom - ZOOM_STEP).max(ZOOM_MIN);
+                }
             }
-            resize_window(hwnd);
+            unsafe { let _ = InvalidateRect(hwnd, None, FALSE); }
         }
-        VK_LEFT => unsafe { 
-            let mut pt = POINT::default();
-            GetCursorPos(&mut pt);
-            SetCursorPos(pt.x - amount, pt.y);
-        },
-        VK_RIGHT => unsafe {
-            let mut pt = POINT::default();
-            GetCursorPos(&mut pt);
-            SetCursorPos(pt.x + amount, pt.y);
-        },
-        VK_UP => unsafe {
-            let mut pt = POINT::default();
-            GetCursorPos(&mut pt);
-            SetCursorPos(pt.x, pt.y - amount);
-        },
-        VK_DOWN => unsafe {
-            let mut pt = POINT::default();
-            GetCursorPos(&mut pt);
-            SetCursorPos(pt.x, pt.y + amount);
-        },
+        VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN => {
+            let amt = if shift { SHIFT_MOVE_PIXELS as i32 } else { 1 };
+            unsafe {
+                let mut pt = POINT::default();
+                let _ = GetCursorPos(&mut pt);
+                match vk {
+                    VK_LEFT => pt.x -= amt,
+                    VK_RIGHT => pt.x += amt,
+                    VK_UP => pt.y -= amt,
+                    VK_DOWN => pt.y += amt,
+                    _ => {}
+                }
+                let _ = SetCursorPos(pt.x, pt.y);
+                update_cursor_pos(pt.x, pt.y);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+            }
+        }
         _ => {}
     }
 }
@@ -331,118 +476,107 @@ fn handle_wheel(hwnd: HWND, delta: i16) {
     let shift = unsafe { GetKeyState(VK_SHIFT.0 as i32) < 0 };
     let up = delta > 0;
     
-    if shift {
-        let mut c = CURRENT_CAPTURED.lock().unwrap();
-        if up {
-            *c = (*c + CAPTURED_PIXELS_STEP).min(CAPTURED_PIXELS_MAX);
+    if let Ok(mut state) = STATE.lock() {
+        if shift {
+            if up {
+                state.captured = (state.captured + CAPTURED_PIXELS_STEP).min(CAPTURED_PIXELS_MAX);
+            } else {
+                state.captured = (state.captured - CAPTURED_PIXELS_STEP).max(CAPTURED_PIXELS_MIN);
+            }
         } else {
-            *c = (*c - CAPTURED_PIXELS_STEP).max(CAPTURED_PIXELS_MIN);
-        }
-    } else {
-        let mut z = CURRENT_ZOOM.lock().unwrap();
-        if up {
-            *z = (*z + ZOOM_STEP).min(ZOOM_MAX);
-        } else {
-            *z = (*z - ZOOM_STEP).max(ZOOM_MIN);
+            if up {
+                state.zoom = (state.zoom + ZOOM_STEP).min(ZOOM_MAX);
+            } else {
+                state.zoom = (state.zoom - ZOOM_STEP).max(ZOOM_MIN);
+            }
         }
     }
-    resize_window(hwnd);
+    unsafe { let _ = InvalidateRect(hwnd, None, FALSE); }
 }
 
 fn select_color() {
-    let r = *COLOR_R.lock().unwrap();
-    let g = *COLOR_G.lock().unwrap();
-    let b = *COLOR_B.lock().unwrap();
-    let fg_mode = *FG_MODE.lock().unwrap();
-    let continue_mode = *CONTINUE_MODE.lock().unwrap();
-    
-    if continue_mode {
-        let has_other = if fg_mode {
-            BG_COLOR.lock().unwrap().is_some()
-        } else {
-            FG_COLOR.lock().unwrap().is_some()
-        };
+    if let Ok(mut state) = STATE.lock() {
+        let color = state.color;
         
-        if fg_mode {
-            *FG_COLOR.lock().unwrap() = Some((r, g, b));
+        if state.continue_mode {
+            let has_other = if state.fg_mode {
+                state.bg_color.is_some()
+            } else {
+                state.fg_color.is_some()
+            };
+            
+            if state.fg_mode {
+                state.fg_color = Some(color);
+            } else {
+                state.bg_color = Some(color);
+            }
+            
+            if has_other {
+                state.quit = true;
+                unsafe { PostQuitMessage(0); }
+            } else {
+                state.fg_mode = !state.fg_mode;
+            }
         } else {
-            *BG_COLOR.lock().unwrap() = Some((r, g, b));
+            if state.fg_mode {
+                state.fg_color = Some(color);
+            } else {
+                state.bg_color = Some(color);
+            }
+            state.quit = true;
+            unsafe { PostQuitMessage(0); }
         }
-        
-        if has_other {
-            stop_app();
-        } else {
-            *FG_MODE.lock().unwrap() = !fg_mode;
-        }
-    } else {
-        if fg_mode {
-            *FG_COLOR.lock().unwrap() = Some((r, g, b));
-        } else {
-            *BG_COLOR.lock().unwrap() = Some((r, g, b));
-        }
-        stop_app();
-    }
-}
-
-fn resize_window(hwnd: HWND) {
-    let size = get_window_size();
-    unsafe {
-        SetWindowPos(hwnd, HWND::default(), 0, 0, size, size, 
-            SWP_NOMOVE | SWP_NOZORDER);
-    }
-}
-
-fn move_window_to_cursor(hwnd: HWND) {
-    let cx = *CURSOR_X.lock().unwrap();
-    let cy = *CURSOR_Y.lock().unwrap();
-    let size = get_window_size();
-    
-    // Position avec offset pour ne pas cacher le curseur
-    let mut x = cx + 30;
-    let mut y = cy + 30;
-    
-    // Ajuste si sort de l'écran
-    unsafe {
-        let sw = GetSystemMetrics(SM_CXSCREEN);
-        let sh = GetSystemMetrics(SM_CYSCREEN);
-        
-        if x + size > sw { x = cx - size - 10; }
-        if y + size > sh { y = cy - size - 10; }
-        if x < 0 { x = 0; }
-        if y < 0 { y = 0; }
-        
-        SetWindowPos(hwnd, HWND::default(), x, y, 0, 0, 
-            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }
 
 // =============================================================================
-// WINDOW PROC
+// WINDOW PROCEDURE
 // =============================================================================
 
 extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     unsafe {
         match msg {
             WM_CREATE => {
-                SetTimer(hwnd, TIMER_ID, TIMER_INTERVAL, None);
+                let _ = ShowCursor(false);
+                let _ = SetTimer(hwnd, TIMER_ID, 16, None);
                 LRESULT(0)
             }
             WM_DESTROY => {
-                KillTimer(hwnd, TIMER_ID);
+                let _ = ShowCursor(true);
+                let _ = KillTimer(hwnd, TIMER_ID);
                 PostQuitMessage(0);
-                LRESULT(0)
-            }
-            WM_TIMER => {
-                update_cursor_and_color();
-                move_window_to_cursor(hwnd);
-                InvalidateRect(hwnd, None, FALSE);
                 LRESULT(0)
             }
             WM_PAINT => {
                 let mut ps = PAINTSTRUCT::default();
                 let hdc = BeginPaint(hwnd, &mut ps);
-                draw_picker(hwnd, hdc);
-                EndPaint(hwnd, &ps);
+                paint_window(hwnd, hdc);
+                let _ = EndPaint(hwnd, &ps);
+                LRESULT(0)
+            }
+            WM_TIMER => {
+                let mut pt = POINT::default();
+                let _ = GetCursorPos(&mut pt);
+                update_cursor_pos(pt.x, pt.y);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                LRESULT(0)
+            }
+            WM_MOUSEMOVE => {
+                let x = (lp.0 & 0xFFFF) as i16 as i32;
+                let y = ((lp.0 >> 16) & 0xFFFF) as i16 as i32;
+                update_cursor_pos(x, y);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                LRESULT(0)
+            }
+            WM_LBUTTONDOWN => {
+                select_color();
+                LRESULT(0)
+            }
+            WM_RBUTTONDOWN => {
+                if let Ok(mut state) = STATE.lock() {
+                    state.quit = true;
+                }
+                PostQuitMessage(0);
                 LRESULT(0)
             }
             WM_KEYDOWN => {
@@ -454,9 +588,9 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRE
                 handle_wheel(hwnd, delta);
                 LRESULT(0)
             }
-            WM_LBUTTONDOWN => {
-                select_color();
-                LRESULT(0)
+            WM_ERASEBKGND => {
+                // Ne pas effacer le fond (évite le scintillement)
+                LRESULT(1)
             }
             _ => DefWindowProcW(hwnd, msg, wp, lp)
         }
@@ -468,15 +602,17 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRE
 // =============================================================================
 
 pub fn run(fg: bool) -> ColorPickerResult {
-    reset_state();
-    *FG_MODE.lock().unwrap() = fg;
+    if let Ok(mut state) = STATE.lock() {
+        state.reset();
+        state.fg_mode = fg;
+    }
     
-    // Capture l'écran une fois au démarrage
-    capture_full_screen();
+    // Capture l'écran AVANT de créer la fenêtre
+    capture_screen();
     
     unsafe {
         let hinst = GetModuleHandleW(None).unwrap();
-        let class_wide: Vec<u16> = WINDOW_CLASS_NAME.encode_utf16().chain(std::iter::once(0)).collect();
+        let class_wide: Vec<u16> = WINDOW_CLASS.encode_utf16().chain(std::iter::once(0)).collect();
         let class_name = PCWSTR(class_wide.as_ptr());
         
         let wc = WNDCLASSEXW {
@@ -484,59 +620,74 @@ pub fn run(fg: bool) -> ColorPickerResult {
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(wnd_proc),
             hInstance: hinst.into(),
-            hCursor: LoadCursorW(None, IDC_CROSS).unwrap_or_default(),
+            hCursor: HCURSOR::default(),
             lpszClassName: class_name,
             ..Default::default()
         };
         
         if RegisterClassExW(&wc) == 0 {
+            cleanup_screen_bitmap();
             return ColorPickerResult { foreground: None, background: None };
         }
         
-        let size = get_window_size();
+        let screen_width = GetSystemMetrics(SM_CXSCREEN);
+        let screen_height = GetSystemMetrics(SM_CYSCREEN);
         
-        // Fenêtre popup sans bordure, toujours au-dessus
+        // Fenêtre plein écran, toujours au-dessus
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST,
             class_name,
-            w!("Color Picker"),
-            WS_POPUP | WS_VISIBLE,
-            100, 100, size, size,
+            w!(""),
+            WS_POPUP,
+            0, 0, screen_width, screen_height,
             None, None, hinst, None,
         );
         
         if hwnd.is_err() {
+            let _ = UnregisterClassW(class_name, hinst);
+            cleanup_screen_bitmap();
             return ColorPickerResult { foreground: None, background: None };
         }
         
         let hwnd = hwnd.unwrap();
         
-        ShowWindow(hwnd, SW_SHOW);
-        SetForegroundWindow(hwnd);
-        SetFocus(hwnd);
+        // Position initiale
+        let mut pt = POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        update_cursor_pos(pt.x, pt.y);
+        
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+        let _ = SetFocus(hwnd);
+        let _ = SetCapture(hwnd);
         
         // Boucle de messages
         let mut msg = MSG::default();
-        while GetMessageW(&mut msg, HWND::default(), 0, 0).into() {
-            if *SHOULD_QUIT.lock().unwrap() { break; }
-            TranslateMessage(&msg);
+        loop {
+            let quit = STATE.lock().map(|s| s.quit).unwrap_or(false);
+            if quit { break; }
+            
+            if GetMessageW(&mut msg, HWND::default(), 0, 0).0 <= 0 {
+                break;
+            }
+            
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
         
-        DestroyWindow(hwnd);
-        UnregisterClassW(class_name, hinst);
-        
-        // Libère la capture d'écran
-        if let Ok(mut cap) = SCREEN_CAPTURE.lock() {
-            if let Some(c) = cap.take() {
-                DeleteObject(c.hbitmap);
-                DeleteDC(c.hdc_mem);
-            }
-        }
+        let _ = ReleaseCapture();
+        let _ = DestroyWindow(hwnd);
+        let _ = UnregisterClassW(class_name, hinst);
     }
     
-    ColorPickerResult {
-        foreground: *FG_COLOR.lock().unwrap(),
-        background: *BG_COLOR.lock().unwrap(),
+    cleanup_screen_bitmap();
+    
+    if let Ok(state) = STATE.lock() {
+        ColorPickerResult {
+            foreground: state.fg_color,
+            background: state.bg_color,
+        }
+    } else {
+        ColorPickerResult { foreground: None, background: None }
     }
 }
