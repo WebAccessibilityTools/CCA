@@ -148,12 +148,19 @@
       pickBtn.textContent = 'Picking...';
 
       try {
-        const color = await invoke('pick_color');
+        // Appelle pick_color avec fg=true (foreground mode)
+        // Call pick_color with fg=true (foreground mode)
+        const color = await invoke('pick_color', { fg: true });
         
-        if (color) {
-          colorPreview.style.backgroundColor = color.hex;
-          hexValue.textContent = color.hex;
-          rgbValue.textContent = `${color.r}, ${color.g}, ${color.b}`;
+        if (color && color.foreground) {
+          // foreground est un tuple [r, g, b]
+          // foreground is a tuple [r, g, b]
+          const [r, g, b] = color.foreground;
+          const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+          
+          colorPreview.style.backgroundColor = hex;
+          hexValue.textContent = hex;
+          rgbValue.textContent = `${r}, ${g}, ${b}`;
           result.classList.add('visible');
         }
       } catch (error) {

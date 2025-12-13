@@ -6,6 +6,8 @@
 //! Ce module contient les types et fonctions utilisés par macOS et Windows.
 //! This module contains types and functions used by both macOS and Windows.
 
+use serde::Serialize;
+
 // =============================================================================
 // STRUCTURES DE RÉSULTAT
 // RESULT STRUCTURES
@@ -16,7 +18,7 @@
 /// 
 /// Contient les couleurs sélectionnées pour le foreground et le background.
 /// Contains selected colors for foreground and background.
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct ColorPickerResult {
     /// Couleur de premier plan (foreground) - RGB
     /// Foreground color - RGB

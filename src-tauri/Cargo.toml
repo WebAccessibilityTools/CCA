@@ -23,16 +23,90 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# =============================================================================
 # macOS dependencies
+# Dépendances macOS
+# =============================================================================
 [target.'cfg(target_os = "macos")'.dependencies]
-# Cocoa framework bindings for macOS GUI
-# Provides NSApplication, NSWindow, NSView, etc.
-cocoa = "0.26"
-
-# Objective-C runtime bindings
-# Provides msg_send! macro for calling Objective-C methods
-objc = "0.2"
-
 # Core Graphics bindings for screen capture
+# Bindings Core Graphics pour la capture d'écran
 # Provides CGDisplay, CGImage for capturing screen pixels
-core-graphics = "0.23"
+# Fournit CGDisplay, CGImage pour capturer les pixels de l'écran
+# Note: We keep this crate because objc2-core-graphics doesn't have all the
+# high-level APIs we need for screen capture (CGDisplayCreateImage, etc.)
+# Note: On garde ce crate car objc2-core-graphics n'a pas toutes les APIs
+# haut niveau nécessaires pour la capture d'écran (CGDisplayCreateImage, etc.)
+core-graphics = "0.24"
+
+# Modern Objective-C runtime bindings (objc2 ecosystem)
+# Bindings modernes pour le runtime Objective-C (écosystème objc2)
+# Type-safe API for Objective-C interop
+# API type-safe pour l'interopérabilité Objective-C
+objc2 = "0.6"
+
+# Foundation framework bindings
+# Bindings pour le framework Foundation
+objc2-foundation = { version = "0.3", features = [
+    "NSGeometry",        # NSPoint, NSSize, NSRect
+    "NSString",          # NSString for text handling / pour la gestion du texte
+    "NSThread",          # Thread utilities / Utilitaires de threads
+    "NSArray",           # NSArray collections
+    "NSEnumerator",      # Enumeration support / Support d'énumération
+    "NSAffineTransform", # Affine transformations for drawing / Transformations affines pour le dessin
+    "NSObject",          # Base object class / Classe objet de base
+    "NSDictionary"       # Dictionary for attributes / Dictionnaire pour les attributs
+] }
+
+# AppKit framework bindings for macOS GUI
+# Bindings AppKit pour l'interface macOS
+objc2-app-kit = { version = "0.3", features = [
+    "NSWindow",          # Window management / Gestion des fenêtres
+    "NSScreen",          # Screen information / Informations écran
+    "NSEvent",           # Event handling / Gestion des événements
+    "NSView",            # View hierarchy / Hiérarchie des vues
+    "NSResponder",       # Event responder chain / Chaîne de répondeurs
+    "NSGraphicsContext", # Graphics context / Contexte graphique
+    "NSColor",           # Color handling / Gestion des couleurs
+    "NSApplication",     # Application lifecycle / Cycle de vie de l'application
+    "NSRunningApplication", # Running app info / Info app en cours
+    "NSImage",           # Image handling / Gestion des images
+    "NSBezierPath",      # Vector drawing / Dessin vectoriel
+    "NSAffineTransform", # Transformations
+    "NSCursor",          # Cursor management / Gestion du curseur
+    "NSFont",            # Font handling / Gestion des polices
+    "NSStringDrawing"    # String drawing / Dessin de texte
+] }
+
+# =============================================================================
+# Windows dependencies
+# Dépendances Windows
+# =============================================================================
+[target.'cfg(target_os = "windows")'.dependencies]
+# Windows API bindings (official Microsoft crate)
+# Bindings pour l'API Windows (crate officiel Microsoft)
+# Uses the latest windows-rs crate for modern Windows API access
+# Utilise le dernier crate windows-rs pour un accès moderne à l'API Windows
+# Windows API bindings
+# Bindings API Windows
+windows = { version = "0.58", features = [
+    # Core Windows functionality
+    # Fonctionnalités Windows de base
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    
+    # Graphics - GDI for basic drawing
+    # Graphiques - GDI pour le dessin de base
+    "Win32_Graphics_Gdi",
+    
+    # Graphics - GDI+ for anti-aliasing
+    # Graphiques - GDI+ pour l'anti-aliasing
+    "Win32_Graphics_GdiPlus",
+    
+    # User Interface - Windows and Messages
+    # Interface utilisateur - Fenêtres et Messages
+    "Win32_UI_WindowsAndMessaging",
+    
+    # Input - Keyboard and Mouse
+    # Entrée - Clavier et Souris
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
