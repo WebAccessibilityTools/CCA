@@ -79,6 +79,17 @@ use std::sync::Mutex; // Mutex pour synchronisation thread-safe
 // Importe toutes les constantes du module config
 use crate::config::*;
 
+// -----------------------------------------------------------------------------
+// Code commun entre plateformes
+// Common code shared between platforms
+// -----------------------------------------------------------------------------
+use crate::common::{
+    ColorPickerResult, 
+    should_use_dark_text,
+    format_hex_color,
+    format_labeled_hex_color,
+};
+
 // =============================================================================
 // ALIAS DE TYPES ET CONSTANTES
 // =============================================================================
@@ -258,7 +269,9 @@ define_class!(
                 // Capture the area and extract the center pixel color
                 if let Some((_image, r, g, b)) = capture_and_get_center_color(screen_location.x, screen_location.y, capture_size, captured_pixels) {
                     // Format the color in hexadecimal (#RRGGBB)
-                    let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
+                    // Utilise format_hex_color du module common
+                    // Uses format_hex_color from common module
+                    let hex_color = format_hex_color(r, g, b);
 
                     // Update the global state
                     if let Ok(mut state) = MOUSE_STATE.lock() {
@@ -537,7 +550,9 @@ define_class!(
                             // Capture la zone et extrait la couleur du pixel central
                             // Capture the area and extract the center pixel color
                             if let Some((_image, r, g, b)) = capture_and_get_center_color(new_x, new_y, capture_size, captured_pixels) {
-                                let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
+                                // Utilise format_hex_color du module common
+                                // Uses format_hex_color from common module
+                                let hex_color = format_hex_color(r, g, b);
 
                                 // Update the state with the new position and color
                                 if let Ok(mut state) = MOUSE_STATE.lock() {
@@ -667,20 +682,8 @@ static FG_MODE: Mutex<bool> = Mutex::new(true);
 /// When enabled, a red "C" badge is displayed before the hex text
 static CONTINUE_MODE: Mutex<bool> = Mutex::new(false);
 
-/// Structure de résultat du color picker avec foreground et background séparés
-/// Result structure for color picker with separate foreground and background
-#[derive(Debug, Clone)]
-pub struct ColorPickerResult {
-    /// Couleur de premier plan (si fg=true lors de l'appel)
-    /// Foreground color (if fg=true when called)
-    pub foreground: Option<(u8, u8, u8)>,
-    /// Couleur d'arrière-plan (si fg=false lors de l'appel)
-    /// Background color (if fg=false when called)
-    pub background: Option<(u8, u8, u8)>,
-    /// Indique si le mode continue était activé
-    /// Indicates if continue mode was enabled
-    pub continue_mode: bool,
-}
+// ColorPickerResult est maintenant défini dans common.rs
+// ColorPickerResult is now defined in common.rs
 
 /// Structure contenant toutes les informations sur la position et la couleur actuelles
 /// Structure containing all information about current position and color
@@ -1091,7 +1094,9 @@ pub fn run(fg: bool) -> ColorPickerResult {
                 // Capture la zone et extrait la couleur du pixel central
                 // Capture the area and extract the center pixel color
                 if let Some((_image, r, g, b)) = capture_and_get_center_color(cocoa_x, cocoa_y, capture_size, captured_pixels) {
-                    let hex_color = format!("#{:02X}{:02X}{:02X}", r, g, b);
+                    // Utilise format_hex_color du module common
+                    // Uses format_hex_color from common module
+                    let hex_color = format_hex_color(r, g, b);
                     
                     // Initialise MOUSE_STATE
                     // Initialize MOUSE_STATE
@@ -1452,16 +1457,14 @@ fn draw_view(view: &NSView) {
                             captured_color_ns.setStroke();
                             
                             let captured_arc_path = NSBezierPath::bezierPath();
-                            unsafe {
-                                let _: () = msg_send![
-                                    &*captured_arc_path,
-                                    appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y),
-                                    radius: border_radius,
-                                    startAngle: captured_start,
-                                    endAngle: captured_end,
-                                    clockwise: Bool::NO
-                                ];
-                            }
+                            let _: () = msg_send![
+                                &*captured_arc_path,
+                                appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y),
+                                radius: border_radius,
+                                startAngle: captured_start,
+                                endAngle: captured_end,
+                                clockwise: Bool::NO
+                            ];
                             captured_arc_path.setLineWidth(BORDER_WIDTH);
                             captured_arc_path.stroke();
                         }
@@ -1493,16 +1496,14 @@ fn draw_view(view: &NSView) {
                     // appendBezierPathWithArcWithCenter:radius:startAngle:endAngle:clockwise:
                     // Note: Dans Cocoa, clockwise=NO signifie sens anti-horaire (sens mathématique positif)
                     // Note: In Cocoa, clockwise=NO means counter-clockwise (positive mathematical direction)
-                    unsafe {
-                        let _: () = msg_send![
-                            &*arc_path,
-                            appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y), // Center point
-                            radius: border_radius,    // Arc radius
-                            startAngle: start_angle,  // Start angle in degrees
-                            endAngle: end_angle,      // End angle in degrees
-                            clockwise: Bool::NO       // Counter-clockwise direction
-                        ];
-                    }
+                    let _: () = msg_send![
+                        &*arc_path,
+                        appendBezierPathWithArcWithCenter: NSPoint::new(center_x, center_y), // Center point
+                        radius: border_radius,    // Arc radius
+                        startAngle: start_angle,  // Start angle in degrees
+                        endAngle: end_angle,      // End angle in degrees
+                        clockwise: Bool::NO       // Counter-clockwise direction
+                    ];
 
                     arc_path.setLineWidth(BORDER_WIDTH); // Set the line width
                     arc_path.stroke(); // Draw the arc
@@ -1523,18 +1524,19 @@ fn draw_view(view: &NSView) {
                         };
                         
                         if let Some((cap_r, cap_g, cap_b)) = captured_color_for_text {
-                            let cap_hex = format!("#{:02X}{:02X}{:02X}", cap_r, cap_g, cap_b);
+                            // Utilise format_labeled_hex_color du module common
+                            // Uses format_labeled_hex_color from common module
                             let cap_label = if captured_fg_mode_for_text {
-                                format!("Foreground - {}", cap_hex)
+                                format_labeled_hex_color("Foreground", cap_r, cap_g, cap_b)
                             } else {
-                                format!("Background - {}", cap_hex)
+                                format_labeled_hex_color("Background", cap_r, cap_g, cap_b)
                             };
                             
                             // Couleur du texte basée sur la luminance de la couleur capturée
-                            let cap_luminance = 0.299 * (cap_r as f64 / 255.0) 
-                                              + 0.587 * (cap_g as f64 / 255.0) 
-                                              + 0.114 * (cap_b as f64 / 255.0);
-                            let cap_text_color = if cap_luminance > 0.5 {
+                            // Text color based on captured color luminance
+                            // Utilise should_use_dark_text du module common
+                            // Uses should_use_dark_text from common module
+                            let cap_text_color = if should_use_dark_text(cap_r, cap_g, cap_b) {
                                 NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
                             } else {
                                 NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
@@ -1557,13 +1559,11 @@ fn draw_view(view: &NSView) {
                     // Dessine le texte hexadécimal en arc (haut ou bas selon fg_mode)
                     // Draw the hex text on arc (top or bottom based on fg_mode)
                     // -------------------------------------------------------------
-                    // Calcule la luminance pour choisir la couleur du texte
-                    // Calculate luminance to choose text color
-                    let luminance = 0.299 * r_val + 0.587 * g_val + 0.114 * b_val;
-
-                    // Texte noir sur fond clair, blanc sur fond sombre
-                    // Black text on light background, white text on dark background
-                    let text_color = if luminance > 0.5 {
+                    // Couleur du texte basée sur la luminance
+                    // Text color based on luminance
+                    // Utilise should_use_dark_text du module common
+                    // Uses should_use_dark_text from common module
+                    let text_color = if should_use_dark_text(info.r, info.g, info.b) {
                         NSColor::colorWithCalibratedRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0)
                     } else {
                         NSColor::colorWithCalibratedRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0)
@@ -1571,10 +1571,12 @@ fn draw_view(view: &NSView) {
 
                     // Construit le texte avec label Foreground/Background
                     // Build text with Foreground/Background label
+                    // Utilise format_labeled_hex_color du module common
+                    // Uses format_labeled_hex_color from common module
                     let label = if fg_mode {
-                        format!("Foreground - {}", &info.hex_color)
+                        format_labeled_hex_color("Foreground", info.r, info.g, info.b)
                     } else {
-                        format!("Background - {}", &info.hex_color)
+                        format_labeled_hex_color("Background", info.r, info.g, info.b)
                     };
                     
                     // Dessine le texte de la couleur actuelle (avec badge C si mode continue)

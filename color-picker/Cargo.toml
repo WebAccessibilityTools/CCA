@@ -68,42 +68,27 @@ objc2-app-kit = { version = "0.3", features = [
 # Bindings pour l'API Windows (crate officiel Microsoft)
 # Uses the latest windows-rs crate for modern Windows API access
 # Utilise le dernier crate windows-rs pour un accès moderne à l'API Windows
+# Windows API bindings
+# Bindings API Windows
 windows = { version = "0.58", features = [
-    # Basic types (HWND, RECT, POINT, etc.)
-    # Types de base (HWND, RECT, POINT, etc.)
+    # Core Windows functionality
+    # Fonctionnalités Windows de base
     "Win32_Foundation",
+    "Win32_System_LibraryLoader",
     
-    # GDI graphics functions for drawing
-    # Fonctions graphiques GDI pour le dessin
-    # Provides HDC, CreateCompatibleDC, BitBlt, GetPixel, etc.
-    # Fournit HDC, CreateCompatibleDC, BitBlt, GetPixel, etc.
+    # Graphics - GDI for basic drawing
+    # Graphiques - GDI pour le dessin de base
     "Win32_Graphics_Gdi",
     
-    # Desktop Window Manager for window effects
-    # Gestionnaire de fenêtres pour les effets de fenêtre
-    "Win32_Graphics_Dwm",
+    # Graphics - GDI+ for anti-aliasing
+    # Graphiques - GDI+ pour l'anti-aliasing
+    "Win32_Graphics_GdiPlus",
     
-    # Window creation and message handling
-    # Création de fenêtres et gestion des messages
-    # Provides CreateWindowExW, DefWindowProcW, GetMessageW, etc.
-    # Fournit CreateWindowExW, DefWindowProcW, GetMessageW, etc.
+    # User Interface - Windows and Messages
+    # Interface utilisateur - Fenêtres et Messages
     "Win32_UI_WindowsAndMessaging",
     
-    # Keyboard and mouse input handling
-    # Gestion des entrées clavier et souris
-    # Provides GetKeyState, SetCursorPos, GetCursorPos, etc.
-    # Fournit GetKeyState, SetCursorPos, GetCursorPos, etc.
+    # Input - Keyboard and Mouse
+    # Entrée - Clavier et Souris
     "Win32_UI_Input_KeyboardAndMouse",
-    
-    # High DPI support
-    # Support haute résolution DPI
-    # Provides GetDpiForWindow, etc.
-    # Fournit GetDpiForWindow, etc.
-    "Win32_UI_HiDpi",
-    
-    # Module loading utilities
-    # Utilitaires de chargement de modules
-    # Provides GetModuleHandleW
-    # Fournit GetModuleHandleW
-    "Win32_System_LibraryLoader",
 ] }
