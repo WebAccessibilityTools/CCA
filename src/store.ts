@@ -31,13 +31,13 @@ export interface ColorResult {
 // Interface pour le store Tauri (état global côté backend)
 // Interface for Tauri store (global state on backend side)
 export interface ColorStore {
-  // Couleur de premier plan au format RGB [r, g, b] ou null
-  // Foreground color in RGB format [r, g, b] or null
-  foreground_rgb: [number, number, number] | null;
+  // Couleur de premier plan au format RGB [r, g, b]
+  // Foreground color in RGB format [r, g, b]
+  foreground_rgb: [number, number, number];
 
-  // Couleur d'arrière-plan au format RGB [r, g, b] ou null
-  // Background color in RGB format [r, g, b] or null
-  background_rgb: [number, number, number] | null;
+  // Couleur d'arrière-plan au format RGB [r, g, b]
+  // Background color in RGB format [r, g, b]
+  background_rgb: [number, number, number];
 
   // Indique si le mode continu est activé
   // Indicates if continue mode is enabled
@@ -181,52 +181,40 @@ export const colorPickerStore = {
   // Méthode pour synchroniser le store Alpine avec le store Tauri
   // Method to synchronize Alpine store with Tauri store
   updateFromTauriStore(this: ColorPickerStore, store: ColorStore) {
-    // Si le store Tauri contient une couleur de premier plan
-    // If Tauri store contains a foreground color
-    if (store.foreground_rgb) {
-      // Déstructure le tuple RGB
-      // Destructure RGB tuple
-      const [r, g, b] = store.foreground_rgb;
+    // Déstructure le tuple RGB de la couleur de premier plan
+    // Destructure RGB tuple of foreground color
+    const [fr, fg, fb] = store.foreground_rgb;
 
-      // Convertit RGB en format hexadécimal
-      // Convert RGB to hexadecimal format
-      const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+    // Convertit RGB en format hexadécimal
+    // Convert RGB to hexadecimal format
+    const foregroundHex = `#${fr.toString(16).padStart(2, '0').toUpperCase()}${fg.toString(16).padStart(2, '0').toUpperCase()}${fb.toString(16).padStart(2, '0').toUpperCase()}`;
 
-      // Met à jour la couleur de premier plan (format hex)
-      // Update foreground color (hex format)
-      this.foreground = hex;
+    // Met à jour la couleur de premier plan (format hex)
+    // Update foreground color (hex format)
+    this.foreground = foregroundHex;
 
-      // Stocke la version RGB pour l'affichage
-      // Store RGB version for display
-      this.foregroundRgb = `${r}, ${g}, ${b}`;
+    // Stocke la version RGB pour l'affichage
+    // Store RGB version for display
+    this.foregroundRgb = `${fr}, ${fg}, ${fb}`;
 
-      // Affiche la section des résultats
-      // Display results section
-      this.resultVisible = true;
-    }
+    // Déstructure le tuple RGB de la couleur d'arrière-plan
+    // Destructure RGB tuple of background color
+    const [br, bg, bb] = store.background_rgb;
 
-    // Si le store Tauri contient une couleur d'arrière-plan
-    // If Tauri store contains a background color
-    if (store.background_rgb) {
-      // Déstructure le tuple RGB
-      // Destructure RGB tuple
-      const [r, g, b] = store.background_rgb;
+    // Convertit RGB en format hexadécimal
+    // Convert RGB to hexadecimal format
+    const backgroundHex = `#${br.toString(16).padStart(2, '0').toUpperCase()}${bg.toString(16).padStart(2, '0').toUpperCase()}${bb.toString(16).padStart(2, '0').toUpperCase()}`;
 
-      // Convertit RGB en format hexadécimal
-      // Convert RGB to hexadecimal format
-      const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+    // Met à jour la couleur d'arrière-plan (format hex)
+    // Update background color (hex format)
+    this.background = backgroundHex;
 
-      // Met à jour la couleur d'arrière-plan (format hex)
-      // Update background color (hex format)
-      this.background = hex;
+    // Stocke la version RGB pour l'affichage
+    // Store RGB version for display
+    this.backgroundRgb = `${br}, ${bg}, ${bb}`;
 
-      // Stocke la version RGB pour l'affichage
-      // Store RGB version for display
-      this.backgroundRgb = `${r}, ${g}, ${b}`;
-
-      // Affiche la section des résultats
-      // Display results section
-      this.resultVisible = true;
-    }
+    // Affiche la section des résultats
+    // Display results section
+    this.resultVisible = true;
   }
 };

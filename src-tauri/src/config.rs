@@ -38,3 +38,11 @@ pub const ZOOM_STEP: f64 = 2.0;
 /// Fixed spacing between characters in the hex text (in pixels)
 /// This ensures consistent text appearance regardless of zoom level
 pub const CHAR_SPACING_PIXELS: f64 = 12.0;
+
+/// Default foreground color RGB value (black)
+/// Valeur RGB par défaut pour la couleur de premier plan (noir)
+pub const DEFAULT_FOREGROUND_RGB: (u8, u8, u8) = (0, 0, 0);
+
+/// Default background color RGB value (white)
+/// Valeur RGB par défaut pour la couleur d'arrière-plan (blanc)
+pub const DEFAULT_BACKGROUND_RGB: (u8, u8, u8) = (255, 255, 255);

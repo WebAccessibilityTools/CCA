@@ -41,19 +41,29 @@ mod linux;
 
 /// Structure du store - contient toutes les données réactives
 /// Store structure - contains all reactive data
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ColorStore {
     /// Couleur de premier plan au format RGB (r, g, b)
     /// Foreground color in RGB format (r, g, b)
-    pub foreground_rgb: Option<(u8, u8, u8)>,
+    pub foreground_rgb: (u8, u8, u8),
 
     /// Couleur d'arrière-plan au format RGB (r, g, b)
     /// Background color in RGB format (r, g, b)
-    pub background_rgb: Option<(u8, u8, u8)>,
+    pub background_rgb: (u8, u8, u8),
 
     /// Mode continue activé
     /// Continue mode enabled
     pub continue_mode: bool,
+}
+
+impl Default for ColorStore {
+    fn default() -> Self {
+        Self {
+            foreground_rgb: config::DEFAULT_FOREGROUND_RGB,
+            background_rgb: config::DEFAULT_BACKGROUND_RGB,
+            continue_mode: false,
+        }
+    }
 }
 
 /// État de l'application wrappé dans un Mutex pour thread-safety
@@ -98,13 +108,13 @@ fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> common
         // Met à jour foreground si sélectionné
         // Update foreground if selected
         if let Some((r, g, b)) = result.foreground {
-            store.foreground_rgb = Some((r, g, b));
+            store.foreground_rgb = (r, g, b);
         }
 
         // Met à jour background si sélectionné
         // Update background if selected
         if let Some((r, g, b)) = result.background {
-            store.background_rgb = Some((r, g, b));
+            store.background_rgb = (r, g, b);
         }
 
         // Met à jour le mode continue
@@ -129,8 +139,8 @@ fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, r: u
         // Met à jour la clé correspondante
         // Update the corresponding key
         match key.as_str() {
-            "foreground" => store.foreground_rgb = Some((r, g, b)),
-            "background" => store.background_rgb = Some((r, g, b)),
+            "foreground" => store.foreground_rgb = (r, g, b),
+            "background" => store.background_rgb = (r, g, b),
             _ => return, // Clé inconnue / Unknown key
         }
 
