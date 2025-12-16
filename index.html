@@ -13,32 +13,59 @@
 
       <button
         class="pick-btn"
-        @click="$store.colorPicker.pickColor()"
+        @click="$store.colorPicker.pickColor(true)"
         x-bind:disabled="$store.colorPicker.isPicking"
-        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick a Color'"
-      >Pick a Color</button>
+        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick Foreground Color'"
+      >Pick Foreground Color</button>
 
       <div
         class="result"
         x-bind:class="{ 'visible': $store.colorPicker.resultVisible }"
       >
-        <div
-          class="color-preview"
-          x-bind:style="`background-color: ${$store.colorPicker.backgroundColor}`"
-        ></div>
-        <div class="color-info">
-          <p
-            class="hex-value"
-            @click="$store.colorPicker.copyHex()"
-            x-text="$store.colorPicker.hex"
-            title="Click to copy"
-          ></p>
-          <p><strong>RGB:</strong> <span x-text="$store.colorPicker.rgb"></span></p>
-          <p
-            class="copied"
-            x-bind:class="{ 'show': $store.colorPicker.copiedVisible }"
-          >Copied!</p>
-        </div>
+        <!-- Foreground Color -->
+        <template x-if="$store.colorPicker.foreground">
+          <div>
+            <h3>Foreground</h3>
+            <div
+              class="color-preview"
+              x-bind:style="`background-color: ${$store.colorPicker.foreground}`"
+            ></div>
+            <div class="color-info">
+              <p
+                class="hex-value"
+                @click="$store.colorPicker.copyHex(true)"
+                x-text="$store.colorPicker.foreground"
+                title="Click to copy"
+              ></p>
+              <p><strong>RGB:</strong> <span x-text="$store.colorPicker.foregroundRgb"></span></p>
+            </div>
+          </div>
+        </template>
+
+        <!-- Background Color -->
+        <template x-if="$store.colorPicker.background">
+          <div>
+            <h3>Background</h3>
+            <div
+              class="color-preview"
+              x-bind:style="`background-color: ${$store.colorPicker.background}`"
+            ></div>
+            <div class="color-info">
+              <p
+                class="hex-value"
+                @click="$store.colorPicker.copyHex(false)"
+                x-text="$store.colorPicker.background"
+                title="Click to copy"
+              ></p>
+              <p><strong>RGB:</strong> <span x-text="$store.colorPicker.backgroundRgb"></span></p>
+            </div>
+          </div>
+        </template>
+
+        <p
+          class="copied"
+          x-bind:class="{ 'show': $store.colorPicker.copiedVisible }"
+        >Copied!</p>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>

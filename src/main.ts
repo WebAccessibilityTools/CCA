@@ -1,69 +1,76 @@
+// =============================================================================
+// main.ts - Point d'entrée de l'application frontend
+// main.ts - Frontend application entry point
+// =============================================================================
+
+// Import de la fonction invoke pour appeler les commandes Tauri depuis le frontend
+// Import invoke function to call Tauri commands from the frontend
 import { invoke } from "@tauri-apps/api/core";
+
+// Import de la fonction listen pour écouter les événements émis par Tauri
+// Import listen function to listen to events emitted by Tauri
+import { listen } from "@tauri-apps/api/event";
+
+// Import d'Alpine.js pour la réactivité de l'interface utilisateur
+// Import Alpine.js for user interface reactivity
 import Alpine from 'alpinejs';
 
-interface ColorResult {
-  foreground: [number, number, number];
-}
+// Import du store et des interfaces depuis store.ts
+// Import store and interfaces from store.ts
+import { colorPickerStore, ColorStore, ColorPickerStore } from './store';
 
-interface ColorPickerStore {
-  isPicking: boolean;
-  resultVisible: boolean;
-  hex: string;
-  rgb: string;
-  backgroundColor: string;
-  copiedVisible: boolean;
-  pickColor(): Promise<void>;
-  copyHex(): Promise<void>;
-}
+// =============================================================================
+// CONFIGURATION DU STORE ALPINE.JS
+// ALPINE.JS STORE CONFIGURATION
+// =============================================================================
 
-// Fonction pour convertir RGB en HEX
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
-}
+// Enregistre le store dans Alpine.js avec le nom 'colorPicker'
+// Register the store in Alpine.js with the name 'colorPicker'
+Alpine.store('colorPicker', colorPickerStore);
 
-// Alpine.js store pour le color picker
-Alpine.store('colorPicker', {
-  isPicking: false,
-  resultVisible: false,
-  hex: '',
-  rgb: '',
-  backgroundColor: '',
-  copiedVisible: false,
+// =============================================================================
+// INITIALISATION
+// INITIALIZATION
+// =============================================================================
 
-  async pickColor(this: ColorPickerStore) {
-    this.isPicking = true;
-
-    try {
-      const color = await invoke<ColorResult>('pick_color', { fg: true });
-
-      if (color && color.foreground) {
-        const [r, g, b] = color.foreground;
-        const hex = rgbToHex(r, g, b);
-
-        this.hex = hex;
-        this.rgb = `${r}, ${g}, ${b}`;
-        this.backgroundColor = hex;
-        this.resultVisible = true;
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      this.isPicking = false;
-    }
-  },
-
-  async copyHex(this: ColorPickerStore) {
-    try {
-      await navigator.clipboard.writeText(this.hex);
-      this.copiedVisible = true;
-      setTimeout(() => {
-        this.copiedVisible = false;
-      }, 1500);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  }
-});
-
-// Démarrer Alpine.js
+// Initialise Alpine.js et active la réactivité dans le DOM
+// Initialize Alpine.js and activate reactivity in the DOM
 Alpine.start();
+
+// Fonction immédiatement invoquée asynchrone (IIFE) pour la synchronisation avec Tauri
+// Immediately Invoked Async Function Expression (IIFE) for Tauri synchronization
+(async () => {
+  // Étape 1 : Récupération de l'état initial du store Tauri au chargement de la page
+  // Step 1: Fetch initial Tauri store state on page load
+  try {
+    // Appelle la commande get_store pour obtenir l'état actuel du backend
+    // Call get_store command to get current backend state
+    const initialStore = await invoke<ColorStore>('get_store');
+
+    // Récupère la référence au store Alpine.js
+    // Get reference to Alpine.js store
+    const alpineStore = Alpine.store('colorPicker') as ColorPickerStore;
+
+    // Synchronise le store Alpine avec l'état initial de Tauri
+    // Synchronize Alpine store with Tauri's initial state
+    alpineStore.updateFromTauriStore(initialStore);
+  } catch (error) {
+    // Affiche l'erreur si le chargement initial échoue
+    // Display error if initial load fails
+    console.error('Error loading initial store:', error);
+  }
+
+  // Étape 2 : Écoute en continu des mises à jour du store Tauri
+  // Step 2: Continuously listen for Tauri store updates
+  await listen<ColorStore>('store-updated', (event) => {
+    // Récupère la référence au store Alpine.js
+    // Get reference to Alpine.js store
+    const alpineStore = Alpine.store('colorPicker') as ColorPickerStore;
+
+    // Synchronise le store Alpine avec le nouveau payload reçu de Tauri
+    // Ceci rend l'interface réactive aux changements du backend
+    // Synchronize Alpine store with new payload received from Tauri
+    // This makes the interface reactive to backend changes
+    alpineStore.updateFromTauriStore(event.payload);
+  });
+})();
