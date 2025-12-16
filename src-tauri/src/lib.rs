@@ -1,4 +1,12 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+// =============================================================================
+// lib.rs - Backend Tauri avec store réactif
+// lib.rs - Tauri backend with reactive store
+// =============================================================================
+
+use tauri::{AppHandle, Emitter};
+use std::sync::Mutex;
+use serde::{Serialize, Deserialize};
+
 // =============================================================================
 // MODULES
 // =============================================================================
@@ -26,37 +34,145 @@ mod windows;
 #[cfg(target_os = "linux")]
 mod linux;
 
+// =============================================================================
+// STORE - État global partagé
+// STORE - Shared global state
+// =============================================================================
 
+/// Structure du store - contient toutes les données réactives
+/// Store structure - contains all reactive data
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+pub struct ColorStore {
+    /// Couleur de premier plan sélectionnée (format "#RRGGBB")
+    /// Selected foreground color (format "#RRGGBB")
+    pub foreground: Option<String>,
+    
+    /// Couleur d'arrière-plan sélectionnée (format "#RRGGBB")
+    /// Selected background color (format "#RRGGBB")
+    pub background: Option<String>,
+    
+    /// Mode continue activé
+    /// Continue mode enabled
+    pub continue_mode: bool,
+}
+
+/// État de l'application wrappé dans un Mutex pour thread-safety
+/// Application state wrapped in Mutex for thread-safety
+pub struct AppState {
+    pub store: Mutex<ColorStore>,
+}
+
+// =============================================================================
+// COMMANDES TAURI
+// TAURI COMMANDS
+// =============================================================================
+
+/// Récupère l'état actuel du store
+/// Gets the current store state
 #[tauri::command]
-fn pick_color(fg: bool) -> common::ColorPickerResult {
+fn get_store(state: tauri::State<AppState>) -> ColorStore {
+    // Verrouille le mutex et clone le contenu
+    // Lock the mutex and clone the content
+    state.store.lock().unwrap().clone()
+}
+
+/// Lance le color picker et met à jour le store automatiquement
+/// Launches the color picker and automatically updates the store
+#[tauri::command]
+fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> common::ColorPickerResult {
+    // Lance le picker natif
+    // Launch the native picker
     #[cfg(target_os = "macos")]
+    let result = macos::run(fg);
+    
+    #[cfg(not(target_os = "macos"))]
+    let result = common::ColorPickerResult::default();
+    
+    // Met à jour le store avec les couleurs sélectionnées
+    // Update the store with selected colors
     {
-        return macos::run(fg); // Appelle l'implémentation macOS avec le paramètre fg
+        // Verrouille le mutex
+        // Lock the mutex
+        let mut store = state.store.lock().unwrap();
+        
+        // Met à jour foreground si sélectionné
+        // Update foreground if selected
+        if let Some((r, g, b)) = result.foreground {
+            store.foreground = Some(format!("#{:02X}{:02X}{:02X}", r, g, b));
+        }
+        
+        // Met à jour background si sélectionné
+        // Update background if selected
+        if let Some((r, g, b)) = result.background {
+            store.background = Some(format!("#{:02X}{:02X}{:02X}", r, g, b));
+        }
+        
+        // Met à jour le mode continue
+        // Update continue mode
+        store.continue_mode = result.continue_mode;
+        
+        // Émet l'événement "store-updated" avec le nouveau state
+        // Emit "store-updated" event with the new state
+        let _ = app.emit("store-updated", store.clone());
     }
+    
+    result
+}
 
-    #[cfg(target_os = "windows")]
+/// Met à jour une valeur du store manuellement
+/// Manually updates a store value
+#[tauri::command]
+fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, value: String) {
     {
-        return windows::run(fg); // Appelle l'implémentation Windows avec le paramètre fg
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        return linux::run(fg); // Appelle l'implémentation Linux avec le paramètre fg
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        // Plateforme non supportée, retourne un résultat vide
-        // Unsupported platform, return empty result
-        common::ColorPickerResult::default()
+        let mut store = state.store.lock().unwrap();
+        
+        // Met à jour la clé correspondante
+        // Update the corresponding key
+        match key.as_str() {
+            "foreground" => store.foreground = Some(value),
+            "background" => store.background = Some(value),
+            _ => return, // Clé inconnue / Unknown key
+        }
+        
+        // Émet l'événement
+        // Emit the event
+        let _ = app.emit("store-updated", store.clone());
     }
 }
+
+/// Efface le store
+/// Clears the store
+#[tauri::command]
+fn clear_store(app: AppHandle, state: tauri::State<AppState>) {
+    {
+        let mut store = state.store.lock().unwrap();
+        *store = ColorStore::default();
+        let _ = app.emit("store-updated", store.clone());
+    }
+}
+
+// =============================================================================
+// INITIALISATION
+// INITIALIZATION
+// =============================================================================
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![pick_color])
+        // Initialise l'état global
+        // Initialize global state
+        .manage(AppState {
+            store: Mutex::new(ColorStore::default()),
+        })
+        // Enregistre les commandes
+        // Register commands
+        .invoke_handler(tauri::generate_handler![
+            get_store,
+            pick_color,
+            update_store,
+            clear_store,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

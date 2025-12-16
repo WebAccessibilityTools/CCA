@@ -8,19 +8,38 @@
   </head>
 
   <body>
-    <main class="container">
-    <h1>🎨 Color Picker</h1>
-    
-    <button class="pick-btn" id="pickBtn">Pick a Color</button>
+    <main class="container" x-data>
+      <h1>🎨 Color Picker</h1>
 
-    <div class="result" id="result">
-      <div class="color-preview" id="colorPreview"></div>
-      <div class="color-info">
-        <p class="hex-value" id="hexValue" title="Click to copy"></p>
-        <p><strong>RGB:</strong> <span id="rgbValue"></span></p>
-        <p class="copied" id="copied">Copied!</p>
+      <button
+        class="pick-btn"
+        @click="$store.colorPicker.pickColor()"
+        x-bind:disabled="$store.colorPicker.isPicking"
+        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick a Color'"
+      >Pick a Color</button>
+
+      <div
+        class="result"
+        x-bind:class="{ 'visible': $store.colorPicker.resultVisible }"
+      >
+        <div
+          class="color-preview"
+          x-bind:style="`background-color: ${$store.colorPicker.backgroundColor}`"
+        ></div>
+        <div class="color-info">
+          <p
+            class="hex-value"
+            @click="$store.colorPicker.copyHex()"
+            x-text="$store.colorPicker.hex"
+            title="Click to copy"
+          ></p>
+          <p><strong>RGB:</strong> <span x-text="$store.colorPicker.rgb"></span></p>
+          <p
+            class="copied"
+            x-bind:class="{ 'show': $store.colorPicker.copiedVisible }"
+          >Copied!</p>
+        </div>
       </div>
-    </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

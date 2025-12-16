@@ -1,51 +1,69 @@
 import { invoke } from "@tauri-apps/api/core";
+import Alpine from 'alpinejs';
 
 interface ColorResult {
   foreground: [number, number, number];
 }
 
-const pickBtn = document.getElementById('pickBtn') as HTMLButtonElement;
-const result = document.getElementById('result') as HTMLDivElement;
-const colorPreview = document.getElementById('colorPreview') as HTMLDivElement;
-const hexValue = document.getElementById('hexValue') as HTMLParagraphElement;
-const rgbValue = document.getElementById('rgbValue') as HTMLSpanElement;
-const copied = document.getElementById('copied') as HTMLParagraphElement;
+interface ColorPickerStore {
+  isPicking: boolean;
+  resultVisible: boolean;
+  hex: string;
+  rgb: string;
+  backgroundColor: string;
+  copiedVisible: boolean;
+  pickColor(): Promise<void>;
+  copyHex(): Promise<void>;
+}
 
-pickBtn.addEventListener('click', async () => {
-  pickBtn.disabled = true;
-  pickBtn.textContent = 'Picking...';
+// Fonction pour convertir RGB en HEX
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+}
 
-  try {
-    // Appelle pick_color avec fg=true (foreground mode)
-    // Call pick_color with fg=true (foreground mode)
-    const color = await invoke<ColorResult>('pick_color', { fg: true });
+// Alpine.js store pour le color picker
+Alpine.store('colorPicker', {
+  isPicking: false,
+  resultVisible: false,
+  hex: '',
+  rgb: '',
+  backgroundColor: '',
+  copiedVisible: false,
 
-    if (color && color.foreground) {
-      // foreground est un tuple [r, g, b]
-      // foreground is a tuple [r, g, b]
-      const [r, g, b] = color.foreground;
-      const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+  async pickColor(this: ColorPickerStore) {
+    this.isPicking = true;
 
-      colorPreview.style.backgroundColor = hex;
-      hexValue.textContent = hex;
-      rgbValue.textContent = `${r}, ${g}, ${b}`;
-      result.classList.add('visible');
+    try {
+      const color = await invoke<ColorResult>('pick_color', { fg: true });
+
+      if (color && color.foreground) {
+        const [r, g, b] = color.foreground;
+        const hex = rgbToHex(r, g, b);
+
+        this.hex = hex;
+        this.rgb = `${r}, ${g}, ${b}`;
+        this.backgroundColor = hex;
+        this.resultVisible = true;
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      this.isPicking = false;
     }
-  } catch (error) {
-    console.error('Error:', error);
-  } finally {
-    pickBtn.disabled = false;
-    pickBtn.textContent = 'Pick a Color';
+  },
+
+  async copyHex(this: ColorPickerStore) {
+    try {
+      await navigator.clipboard.writeText(this.hex);
+      this.copiedVisible = true;
+      setTimeout(() => {
+        this.copiedVisible = false;
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   }
 });
 
-// Copy hex on click
-hexValue.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(hexValue.textContent || '');
-    copied.classList.add('show');
-    setTimeout(() => copied.classList.remove('show'), 1500);
-  } catch (err) {
-    console.error('Failed to copy:', err);
-  }
-});
+// Démarrer Alpine.js
+Alpine.start();
