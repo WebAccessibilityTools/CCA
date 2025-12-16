@@ -43,14 +43,14 @@ mod linux;
 /// Store structure - contains all reactive data
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct ColorStore {
-    /// Couleur de premier plan sélectionnée (format "#RRGGBB")
-    /// Selected foreground color (format "#RRGGBB")
-    pub foreground: Option<String>,
-    
-    /// Couleur d'arrière-plan sélectionnée (format "#RRGGBB")
-    /// Selected background color (format "#RRGGBB")
-    pub background: Option<String>,
-    
+    /// Couleur de premier plan au format RGB (r, g, b)
+    /// Foreground color in RGB format (r, g, b)
+    pub foreground_rgb: Option<(u8, u8, u8)>,
+
+    /// Couleur d'arrière-plan au format RGB (r, g, b)
+    /// Background color in RGB format (r, g, b)
+    pub background_rgb: Option<(u8, u8, u8)>,
+
     /// Mode continue activé
     /// Continue mode enabled
     pub continue_mode: bool,
@@ -94,23 +94,23 @@ fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> common
         // Verrouille le mutex
         // Lock the mutex
         let mut store = state.store.lock().unwrap();
-        
+
         // Met à jour foreground si sélectionné
         // Update foreground if selected
         if let Some((r, g, b)) = result.foreground {
-            store.foreground = Some(format!("#{:02X}{:02X}{:02X}", r, g, b));
+            store.foreground_rgb = Some((r, g, b));
         }
-        
+
         // Met à jour background si sélectionné
         // Update background if selected
         if let Some((r, g, b)) = result.background {
-            store.background = Some(format!("#{:02X}{:02X}{:02X}", r, g, b));
+            store.background_rgb = Some((r, g, b));
         }
-        
+
         // Met à jour le mode continue
         // Update continue mode
         store.continue_mode = result.continue_mode;
-        
+
         // Émet l'événement "store-updated" avec le nouveau state
         // Emit "store-updated" event with the new state
         let _ = app.emit("store-updated", store.clone());
@@ -122,18 +122,18 @@ fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> common
 /// Met à jour une valeur du store manuellement
 /// Manually updates a store value
 #[tauri::command]
-fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, value: String) {
+fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, r: u8, g: u8, b: u8) {
     {
         let mut store = state.store.lock().unwrap();
-        
+
         // Met à jour la clé correspondante
         // Update the corresponding key
         match key.as_str() {
-            "foreground" => store.foreground = Some(value),
-            "background" => store.background = Some(value),
+            "foreground" => store.foreground_rgb = Some((r, g, b)),
+            "background" => store.background_rgb = Some((r, g, b)),
             _ => return, // Clé inconnue / Unknown key
         }
-        
+
         // Émet l'événement
         // Emit the event
         let _ = app.emit("store-updated", store.clone());

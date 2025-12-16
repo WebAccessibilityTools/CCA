@@ -7,10 +7,6 @@
 // Import invoke function to call Tauri commands
 import { invoke } from "@tauri-apps/api/core";
 
-// Import de la fonction hexToRgb depuis les utilitaires
-// Import hexToRgb function from utilities
-import { hexToRgb } from './utils';
-
 // =============================================================================
 // INTERFACES TYPESCRIPT
 // TYPESCRIPT INTERFACES
@@ -35,13 +31,13 @@ export interface ColorResult {
 // Interface pour le store Tauri (état global côté backend)
 // Interface for Tauri store (global state on backend side)
 export interface ColorStore {
-  // Couleur de premier plan au format hexadécimal "#RRGGBB" ou null
-  // Foreground color in hexadecimal format "#RRGGBB" or null
-  foreground: string | null;
+  // Couleur de premier plan au format RGB [r, g, b] ou null
+  // Foreground color in RGB format [r, g, b] or null
+  foreground_rgb: [number, number, number] | null;
 
-  // Couleur d'arrière-plan au format hexadécimal "#RRGGBB" ou null
-  // Background color in hexadecimal format "#RRGGBB" or null
-  background: string | null;
+  // Couleur d'arrière-plan au format RGB [r, g, b] ou null
+  // Background color in RGB format [r, g, b] or null
+  background_rgb: [number, number, number] | null;
 
   // Indique si le mode continu est activé
   // Indicates if continue mode is enabled
@@ -187,14 +183,22 @@ export const colorPickerStore = {
   updateFromTauriStore(this: ColorPickerStore, store: ColorStore) {
     // Si le store Tauri contient une couleur de premier plan
     // If Tauri store contains a foreground color
-    if (store.foreground) {
+    if (store.foreground_rgb) {
+      // Déstructure le tuple RGB
+      // Destructure RGB tuple
+      const [r, g, b] = store.foreground_rgb;
+
+      // Convertit RGB en format hexadécimal
+      // Convert RGB to hexadecimal format
+      const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+
       // Met à jour la couleur de premier plan (format hex)
       // Update foreground color (hex format)
-      this.foreground = store.foreground;
+      this.foreground = hex;
 
-      // Convertit et stocke la version RGB pour l'affichage
-      // Convert and store RGB version for display
-      this.foregroundRgb = hexToRgb(store.foreground);
+      // Stocke la version RGB pour l'affichage
+      // Store RGB version for display
+      this.foregroundRgb = `${r}, ${g}, ${b}`;
 
       // Affiche la section des résultats
       // Display results section
@@ -203,14 +207,22 @@ export const colorPickerStore = {
 
     // Si le store Tauri contient une couleur d'arrière-plan
     // If Tauri store contains a background color
-    if (store.background) {
+    if (store.background_rgb) {
+      // Déstructure le tuple RGB
+      // Destructure RGB tuple
+      const [r, g, b] = store.background_rgb;
+
+      // Convertit RGB en format hexadécimal
+      // Convert RGB to hexadecimal format
+      const hex = `#${r.toString(16).padStart(2, '0').toUpperCase()}${g.toString(16).padStart(2, '0').toUpperCase()}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+
       // Met à jour la couleur d'arrière-plan (format hex)
       // Update background color (hex format)
-      this.background = store.background;
+      this.background = hex;
 
-      // Convertit et stocke la version RGB pour l'affichage
-      // Convert and store RGB version for display
-      this.backgroundRgb = hexToRgb(store.background);
+      // Stocke la version RGB pour l'affichage
+      // Store RGB version for display
+      this.backgroundRgb = `${r}, ${g}, ${b}`;
 
       // Affiche la section des résultats
       // Display results section
