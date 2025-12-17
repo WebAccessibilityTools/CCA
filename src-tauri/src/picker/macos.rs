@@ -83,8 +83,8 @@ use crate::config::*;
 // Code commun entre plateformes
 // Common code shared between platforms
 // -----------------------------------------------------------------------------
-use crate::common::{
-    ColorPickerResult, 
+use super::common::{
+    ColorPickerResult,
     should_use_dark_text,
     format_hex_color,
     format_labeled_hex_color,

@@ -22,7 +22,7 @@ use crate::config::{
 // IMPORTS - Types et fonctions communs
 // IMPORTS - Common types and functions
 // -----------------------------------------------------------------------------
-use crate::common::{
+use super::common::{
     ColorPickerResult,         // Structure de résultat avec FG/BG / Result structure with FG/BG
     should_use_dark_text,      // Détermine si texte noir ou blanc / Determines black or white text
     format_labeled_hex_color,  // Formate "Label - #RRGGBB" / Formats "Label - #RRGGBB"
