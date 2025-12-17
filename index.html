@@ -3,70 +3,62 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/utils.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Color Contrast Analyser</title>
   </head>
 
   <body>
     <main class="container" x-data>
-      <h1>🎨 Color Picker</h1>
+      <h1 class="sr-only">Color Contrast Analyser</h1>
 
-      <button
+      <!-- Foreground Color -->
+      <section>
+        <h2>Foreground</h2>
+        <div
+          class="color-preview"
+          x-bind:style="`background-color: ${$store.colorPicker.foreground}`"
+        ></div>
+                    <button
         class="pick-btn"
         @click="$store.colorPicker.pickColor(true)"
         x-bind:disabled="$store.colorPicker.isPicking"
-        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick Foreground Color'"
-      >Pick Foreground Color</button>
-
-      <div
-        class="result"
-        x-bind:class="{ 'visible': $store.colorPicker.resultVisible }"
-      >
-        <!-- Foreground Color -->
-        <template x-if="$store.colorPicker.foreground">
-          <div>
-            <h3>Foreground</h3>
-            <div
-              class="color-preview"
-              x-bind:style="`background-color: ${$store.colorPicker.foreground}`"
-            ></div>
-            <div class="color-info">
-              <p
-                class="hex-value"
-                @click="$store.colorPicker.copyHex(true)"
-                x-text="$store.colorPicker.foreground"
-                title="Click to copy"
-              ></p>
-              <p><strong>RGB:</strong> <span x-text="$store.colorPicker.foregroundRgb"></span></p>
-            </div>
-          </div>
-        </template>
-
-        <!-- Background Color -->
-        <template x-if="$store.colorPicker.background">
-          <div>
-            <h3>Background</h3>
-            <div
-              class="color-preview"
-              x-bind:style="`background-color: ${$store.colorPicker.background}`"
-            ></div>
-            <div class="color-info">
-              <p
-                class="hex-value"
-                @click="$store.colorPicker.copyHex(false)"
-                x-text="$store.colorPicker.background"
-                title="Click to copy"
-              ></p>
-              <p><strong>RGB:</strong> <span x-text="$store.colorPicker.backgroundRgb"></span></p>
-            </div>
-          </div>
-        </template>
-
-        <p
-          class="copied"
-          x-bind:class="{ 'show': $store.colorPicker.copiedVisible }"
-        >Copied!</p>
-      </div>
+        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick Color'"
+      >Pick Color</button>
+        <div class="color-info">
+          <p
+            class="hex-value"
+            @click="$store.colorPicker.copyHex(true)"
+            x-text="$store.colorPicker.foreground"
+            title="Click to copy"
+          ></p>
+          <p><strong>RGB:</strong> <span x-text="$store.colorPicker.foregroundRgb"></span></p>
+        </div>
+      </section>
+      
+      <!-- Background Color -->
+      <section>
+        <h2>Background</h2>
+        <div
+          class="color-preview"
+          x-bind:style="`background-color: ${$store.colorPicker.background}`"
+        ></div>
+                    <button
+        class="pick-btn"
+        @click="$store.colorPicker.pickColor(false)"
+        x-bind:disabled="$store.colorPicker.isPicking"
+        x-text="$store.colorPicker.isPicking ? 'Picking...' : 'Pick Color'"
+      >Pick Color</button>
+        <div class="color-info">
+          <p
+            class="hex-value"
+            @click="$store.colorPicker.copyHex(false)"
+            x-text="$store.colorPicker.background"
+            title="Click to copy"
+          ></p>
+          <p><strong>RGB:</strong> <span x-text="$store.colorPicker.backgroundRgb"></span></p>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

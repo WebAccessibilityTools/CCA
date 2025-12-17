@@ -1,30 +1,48 @@
+/* =============================================================================
+   style.css - Styles pour le Color Contrast Analyser
+   style.css - Styles for the Color Contrast Analyser
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   RESET ET BASE
+   RESET AND BASE
+   ----------------------------------------------------------------------------- */
+
+/* Réinitialise les marges, paddings et définit box-sizing pour tous les éléments */
+/* Reset margins, paddings and set box-sizing for all elements */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+/* Styles du corps de la page - centrage vertical et horizontal */
+/* Body styles - vertical and horizontal centering */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #1a1a2e;
   color: #eee;
   min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
 
+/* -----------------------------------------------------------------------------
+   CONTENEUR PRINCIPAL
+   MAIN CONTAINER
+   ----------------------------------------------------------------------------- */
+
+/* Conteneur principal avec centrage du texte */
+/* Main container with centered text */
 .container {
-  text-align: center;
   padding: 40px;
 }
 
-h1 {
-  margin-bottom: 30px;
-  font-weight: 300;
-  font-size: 28px;
-}
+/* -----------------------------------------------------------------------------
+   BOUTON DE SÉLECTION DE COULEUR
+   COLOR PICKER BUTTON
+   ----------------------------------------------------------------------------- */
 
+/* Bouton principal pour lancer le sélecteur de couleur */
+/* Main button to launch color picker */
 .pick-btn {
   background: #4a90d9;
   color: white;
@@ -33,38 +51,51 @@ h1 {
   font-size: 16px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
+/* État de survol du bouton - couleur plus claire et élévation */
+/* Button hover state - lighter color and elevation */
 .pick-btn:hover {
   background: #5a9fe9;
-  transform: translateY(-2px);
 }
 
+/* État désactivé du bouton pendant la sélection */
+/* Disabled button state during selection */
 .pick-btn:disabled {
   background: #666;
   cursor: wait;
   transform: none;
 }
 
+/* -----------------------------------------------------------------------------
+   ZONE DE RÉSULTATS
+   RESULTS AREA
+   ----------------------------------------------------------------------------- */
+
+/* Conteneur des résultats - caché par défaut */
+/* Results container - hidden by default */
 .result {
   margin-top: 40px;
-  display: none;
 }
 
-.result.visible {
-  display: block;
-}
-
+/* Aperçu visuel de la couleur - carré coloré */
+/* Visual color preview - colored square */
 .color-preview {
-  width: 120px;
-  height: 120px;
-  border-radius: 12px;
-  margin: 0 auto 20px;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 1rem;
   border: 3px solid rgba(255,255,255,0.2);
   box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    display: inline-block;
 }
 
+/* -----------------------------------------------------------------------------
+   INFORMATIONS DE COULEUR
+   COLOR INFORMATION
+   ----------------------------------------------------------------------------- */
+
+/* Conteneur des informations de couleur (hex, RGB) */
+/* Color information container (hex, RGB) */
 .color-info {
   background: rgba(255,255,255,0.1);
   padding: 20px;
@@ -72,15 +103,26 @@ h1 {
   display: inline-block;
 }
 
+/* Paragraphes dans le conteneur d'infos */
+/* Paragraphs in info container */
 .color-info p {
   margin: 8px 0;
   font-size: 16px;
 }
 
+/* Labels en gras (RGB:, etc.) */
+/* Bold labels (RGB:, etc.) */
 .color-info strong {
   color: #4a90d9;
 }
 
+/* -----------------------------------------------------------------------------
+   VALEUR HEXADÉCIMALE
+   HEXADECIMAL VALUE
+   ----------------------------------------------------------------------------- */
+
+/* Affichage de la valeur hexadécimale - cliquable pour copier */
+/* Hexadecimal value display - clickable to copy */
 .hex-value {
   font-family: 'Monaco', 'Menlo', monospace;
   font-size: 24px;
@@ -88,21 +130,4 @@ h1 {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.hex-value:hover {
-  background: rgba(255,255,255,0.1);
-}
-
-.copied {
-  font-size: 12px;
-  color: #4a90d9;
-  margin-top: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.copied.show {
-  opacity: 1;
 }
