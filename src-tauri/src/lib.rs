@@ -21,6 +21,10 @@ mod picker;
 /// Store management and associated commands
 mod store;
 
+/// Fonctions de manipulation de couleurs
+/// Color manipulation functions
+mod color;
+
 // =============================================================================
 // INITIALISATION
 // INITIALIZATION

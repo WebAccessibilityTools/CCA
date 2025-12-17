@@ -17,16 +17,16 @@ import Alpine from 'alpinejs';
 
 // Import du store et des interfaces depuis store.ts
 // Import store and interfaces from store.ts
-import { colorPickerStore, ColorStore, ColorPickerStore } from './store';
+import { UIStore, ColorStore } from './store';
 
 // =============================================================================
 // CONFIGURATION DU STORE ALPINE.JS
 // ALPINE.JS STORE CONFIGURATION
 // =============================================================================
 
-// Enregistre le store dans Alpine.js avec le nom 'colorPicker'
-// Register the store in Alpine.js with the name 'colorPicker'
-Alpine.store('colorPicker', colorPickerStore);
+// Enregistre le store dans Alpine.js avec le nom 'uiStore'
+// Register the store in Alpine.js with the name 'uiStore'
+Alpine.store('uiStore', UIStore);
 
 // =============================================================================
 // INITIALISATION
@@ -49,7 +49,7 @@ Alpine.start();
 
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('colorPicker') as ColorPickerStore;
+    const alpineStore = Alpine.store('uiStore') as UIStore;
 
     // Synchronise le store Alpine avec l'état initial de Tauri
     // Synchronize Alpine store with Tauri's initial state
@@ -65,7 +65,7 @@ Alpine.start();
   await listen<ColorStore>('store-updated', (event) => {
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('colorPicker') as ColorPickerStore;
+    const alpineStore = Alpine.store('uiStore') as UIStore;
 
     // Synchronise le store Alpine avec le nouveau payload reçu de Tauri
     // Ceci rend l'interface réactive aux changements du backend

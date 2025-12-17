@@ -14,7 +14,7 @@
     "windows": [
       {
         "title": "cca",
-        "width": 400,
+        "width": 600,
         "height": 500,
         "resizable": true,
         "center": true

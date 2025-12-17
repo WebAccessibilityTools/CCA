@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use crate::config;
 use crate::picker;
+use crate::color;
+use bigcolor::BigColor;
 
 // =============================================================================
 // STORE - État global partagé
@@ -17,25 +19,64 @@ use crate::picker;
 /// Store structure - contains all reactive data
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ColorStore {
+    /// Couleur de premier plan (BigColor) - ignorée par la sérialisation
+    /// Foreground color (BigColor) - ignored by serialization
+    #[serde(skip)]
+    pub foreground: BigColor,
+
+    /// Couleur d'arrière-plan (BigColor) - ignorée par la sérialisation
+    /// Background color (BigColor) - ignored by serialization
+    #[serde(skip)]
+    pub background: BigColor,
+
     /// Couleur de premier plan au format RGB (r, g, b)
     /// Foreground color in RGB format (r, g, b)
     pub foreground_rgb: (u8, u8, u8),
+
+    /// Couleur de premier plan au format hexadécimal
+    /// Foreground color in hexadecimal format
+    pub foreground_hex: String,
 
     /// Couleur d'arrière-plan au format RGB (r, g, b)
     /// Background color in RGB format (r, g, b)
     pub background_rgb: (u8, u8, u8),
 
+    /// Couleur d'arrière-plan au format hexadécimal
+    /// Background color in hexadecimal format
+    pub background_hex: String,
+
     /// Mode continue activé
     /// Continue mode enabled
     pub continue_mode: bool,
+
+    // Contast Ratio value, not rounded
+    // Valeur du Ratio de Contraste, non arrondi
+    #[serde(skip)]
+    pub contrast_ratio_raw: f32,
+
+    // Contast Ratio value, rounded
+    // Valeur du Ratio de Contraste, arrondi
+    pub contrast_ratio_rounded: f32,
 }
 
 impl Default for ColorStore {
     fn default() -> Self {
+        let (fr, fg, fb) = config::DEFAULT_FOREGROUND_RGB;
+        let (br, bg, bb) = config::DEFAULT_BACKGROUND_RGB;
+        let fc = BigColor::from_rgb(fr, fg, fb, 1.0);
+        let bc = BigColor::from_rgb(br, bg, bb, 1.0);
+        let contrast_ratio = fc.get_contrast_ratio(&bc);
+        let contrast_ratio_rounded = (contrast_ratio * config::ROUNDING_FACTOR).round() / config::ROUNDING_FACTOR;
         Self {
+            foreground: fc,
+            background: bc,
             foreground_rgb: config::DEFAULT_FOREGROUND_RGB,
+            foreground_hex: format!("#{:02X}{:02X}{:02X}", fr, fg, fb),
             background_rgb: config::DEFAULT_BACKGROUND_RGB,
+            background_hex: format!("#{:02X}{:02X}{:02X}", br, bg, bb),
             continue_mode: false,
+            contrast_ratio_raw: contrast_ratio,
+            contrast_ratio_rounded: contrast_ratio_rounded,
         }
     }
 }
@@ -63,7 +104,7 @@ pub fn get_store(state: tauri::State<AppState>) -> ColorStore {
 /// Lance le color picker et met à jour le store automatiquement
 /// Launches the color picker and automatically updates the store
 #[tauri::command]
-pub fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> picker::common::ColorPickerResult {
+pub fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) {
     // Lance le picker natif
     // Launch the native picker
     let result = picker::run(fg);
@@ -75,17 +116,9 @@ pub fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> pi
         // Lock the mutex
         let mut store = state.store.lock().unwrap();
 
-        // Met à jour foreground si sélectionné
-        // Update foreground if selected
-        if let Some((r, g, b)) = result.foreground {
-            store.foreground_rgb = (r, g, b);
-        }
-
-        // Met à jour background si sélectionné
-        // Update background if selected
-        if let Some((r, g, b)) = result.background {
-            store.background_rgb = (r, g, b);
-        }
+        // Met à jour les couleurs à partir du résultat du picker
+        // Update colors from picker result
+        color::update_results_from_picker(&mut store, &result);
 
         // Met à jour le mode continue
         // Update continue mode
@@ -95,8 +128,6 @@ pub fn pick_color(app: AppHandle, state: tauri::State<AppState>, fg: bool) -> pi
         // Emit "store-updated" event with the new state
         let _ = app.emit("store-updated", store.clone());
     }
-
-    result
 }
 
 /// Met à jour une valeur du store manuellement
@@ -109,10 +140,22 @@ pub fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, 
         // Met à jour la clé correspondante
         // Update the corresponding key
         match key.as_str() {
-            "foreground" => store.foreground_rgb = (r, g, b),
-            "background" => store.background_rgb = (r, g, b),
+            "foreground" => {
+                store.foreground_rgb = (r, g, b);
+                store.foreground_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
+                store.foreground = BigColor::from_rgb(r, g, b, 1.0);
+            }
+            "background" => {
+                store.background_rgb = (r, g, b);
+                store.background_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
+                store.background = BigColor::from_rgb(r, g, b, 1.0);
+            }
             _ => return, // Clé inconnue / Unknown key
         }
+
+        // Recalcule le ratio de contraste
+        // Recalculate contrast ratio
+        store.contrast_ratio_raw = store.foreground.get_contrast_ratio(&store.background);
 
         // Émet l'événement
         // Emit the event

@@ -46,3 +46,7 @@ pub const DEFAULT_FOREGROUND_RGB: (u8, u8, u8) = (0, 0, 0);
 /// Default background color RGB value (white)
 /// Valeur RGB par défaut pour la couleur d'arrière-plan (blanc)
 pub const DEFAULT_BACKGROUND_RGB: (u8, u8, u8) = (255, 255, 255);
+
+/// Value for rounding
+pub const ROUNDING_FACTOR: f32 = 10.0; // 1 decimals;
+
