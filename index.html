@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -9,71 +9,86 @@
   </head>
 
   <body>
-    <main class="container" x-data>
-      <h1 class="sr-only">Color Contrast Analyser</h1>
+    <main x-data>
+      <h1 class="sr-only">Colour Contrast Analyser</h1>
+      <div class="colors">
+        <!-- Foreground Color -->
+        <section>
+          <div>
+            <div
+              class="color-preview"
+              x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
+              x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
+            >
+              <h2>Foreground</h2>
+              <button
+                class="pick-btn"
+                @click="$store.uiStore.pickColor(true)"
+                x-bind:disabled="$store.uiStore.isPicking"
+              >
+              <span class="sr-only" x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick foreground Colour'">Pick foreground Colour</span>
+              <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px" fill="#ffffff"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="color-info">
+            <p
+              class="hex-value"
+              x-text="$store.uiStore.foregroundHex"
+            ></p>
+            <p>
+              <strong>RGB:</strong>
+              <span x-text="$store.uiStore.foregroundRgb"></span>
+            </p>
+          </div>
+        </section>
 
-      <!-- Foreground Color -->
-      <section>
-        <h2>Foreground</h2>
-        <div
-          class="color-preview"
-          x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
-        ></div>
-                    <button
-        class="pick-btn"
-        @click="$store.uiStore.pickColor(true)"
-        x-bind:disabled="$store.uiStore.isPicking"
-        x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick Color'"
-      >Pick Color</button>
-        <div class="color-info">
-          <p
-            class="hex-value"
-            x-text="$store.uiStore.foregroundHex"
-            title="Click to copy"
-          ></p>
-          <p><strong>RGB:</strong> <span x-text="$store.uiStore.foregroundRgb"></span></p>
-        </div>
-      </section>
-      
-      <!-- Background Color -->
-      <section>
-        <h2>Background</h2>
-        <div
-          class="color-preview"
-          x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
-        ></div>
-                    <button
-        class="pick-btn"
-        @click="$store.uiStore.pickColor(false)"
-        x-bind:disabled="$store.uiStore.isPicking"
-        x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick Color'"
-      >Pick Color</button>
-        <div class="color-info">
-          <p
-            class="hex-value"
-            x-text="$store.uiStore.backgroundHex"
-            title="Click to copy"
-          ></p>
-          <p><strong>RGB:</strong> <span x-text="$store.uiStore.backgroundRgb"></span></p>
-        </div>
-      </section>
-
+        <!-- Background Color -->
+        <section>
+          <div>
+            <div
+              class="color-preview"
+              x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
+              x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
+            >
+              <h2>Background</h2>
+              <button
+                class="pick-btn"
+                @click="$store.uiStore.pickColor(false)"
+                x-bind:disabled="$store.uiStore.isPicking"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px" fill="#ffffff"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
+                <span class="sr-only" x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick background colour'">Pick background Colour</span>
+              </button>
+            </div>
+          </div>
+          <div class="color-info">
+            <p
+              class="hex-value"
+              x-text="$store.uiStore.backgroundHex"
+            ></p>
+            <p>
+              <strong>RGB:</strong>
+              <span x-text="$store.uiStore.backgroundRgb"></span>
+            </p>
+          </div>
+        </section>
+      </div>
       <!-- Contrast Ratio -->
-       <section class="contrast-ratio">
+      <section class="contrast-ratio">
         <p>
-          <strong>Contrast Ratio:</strong> 
-          <span x-text="$store.uiStore.contrastRatio"
-          >xxx:1</span>
+          <strong>Contrast Ratio:</strong>
+          <span x-text="$store.uiStore.contrastRatio">xxx:1</span>
         </p>
-       </section>
+      </section>
 
-       <!-- ICC Profile Status (debug/info) -->
-       <section class="icc-status" x-show="$store.uiStore.platform === 'macos'">
+      <!-- ICC Profile Status (debug/info) -->
+      <section class="icc-status" x-show="$store.uiStore.platform === 'macos'">
         <p>
-          <strong>ICC Profile:</strong> 
+          <strong>Colour Profile:</strong>
           <span x-text="$store.uiStore.currentICCProfile"></span>
         </p>
-       </section>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

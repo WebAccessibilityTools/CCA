@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // Interface pour le store Tauri (état global côté backend)
 // Interface for Tauri store (global state on backend side)
-export interface ColorStore {
+export interface BackendStore {
   // Platform
   platform: string;
 
@@ -21,6 +21,10 @@ export interface ColorStore {
   // Foreground color in Hexa format
   foreground_hex: string;
 
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  foreground_is_dark: boolean;
+
   // Couleur d'arrière-plan au format RGB [r, g, b]
   // Background color in RGB format [r, g, b]
   background_rgb: [number, number, number];
@@ -28,6 +32,10 @@ export interface ColorStore {
   // Couleur d'arrière-plan au format Hexa
   // Background color in Hexa format
   background_hex: string;
+
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  background_is_dark: boolean;
 
   // Contrast Ratio (Rounded)
   contrast_ratio_rounded: number;
@@ -55,6 +63,10 @@ export interface UIStore {
   // Foreground color in hexadecimal format
   foregroundHex: string;
 
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  foregroundIsDark: boolean;
+
   // Couleur d'arrière-plan au format RGB "r, g, b" pour affichage
   // Background color in RGB format "r, g, b" for display
   backgroundRgb: string;
@@ -62,6 +74,10 @@ export interface UIStore {
   // Couleur d'arrière-plan au format hexadécimal
   // Background color in hexadecimal format
   backgroundHex: string;
+
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  backgroundIsDark: boolean;
 
   // Contrast Ratio Rounded
   contrastRatio: string;
@@ -76,7 +92,7 @@ export interface UIStore {
 
   // Méthode pour mettre à jour le store Alpine depuis le store Tauri
   // Method to update Alpine store from Tauri store
-  updateFromTauriStore(store: ColorStore): void;
+  updateFromTauriStore(store: BackendStore): void;
 }
 
 // =============================================================================
@@ -101,6 +117,10 @@ export const UIStore = {
   // Initial state: no foreground color
   foregroundHex: '',
 
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  foregroundIsDark: true,
+
   // État initial : RGB d'arrière-plan vide
   // Initial state: empty background RGB
   backgroundRgb: '',
@@ -108,6 +128,10 @@ export const UIStore = {
   // État initial : aucune couleur d'arrière-plan
   // Initial state: no background color
   backgroundHex: '',
+
+  /// Si la couleur est sombre
+  /// If the colour is dark
+  backgroundIsDark: false,
 
   // Initial state: Contrast ratio
   contrastRatio: 'xxx:1',
@@ -144,7 +168,7 @@ export const UIStore = {
 
   // Méthode pour synchroniser le store Alpine avec le store Tauri
   // Method to synchronize Alpine store with Tauri store
-  updateFromTauriStore(this: UIStore, store: ColorStore) {
+  updateFromTauriStore(this: UIStore, store: BackendStore) {
     this.platform = store.platform;
     
     // Déstructure le tuple RGB de la couleur de premier plan
@@ -159,6 +183,10 @@ export const UIStore = {
     // Update foreground color (hex format)
     this.foregroundHex = store.foreground_hex;
 
+    /// Si la couleur est sombre
+    /// If the colour is dark
+    this.foregroundIsDark = store.foreground_is_dark;
+
     // Déstructure le tuple RGB de la couleur d'arrière-plan
     // Destructure RGB tuple of background color
     const [br, bg, bb] = store.background_rgb;
@@ -171,6 +199,9 @@ export const UIStore = {
     // Update background color (hex format)
     this.backgroundHex = store.background_hex;
 
+    /// Si la couleur est sombre
+    /// If the colour is dark
+    this.backgroundIsDark = store.background_is_dark;
 
     this.contrastRatio = `${store.contrast_ratio_rounded}:1`;
 

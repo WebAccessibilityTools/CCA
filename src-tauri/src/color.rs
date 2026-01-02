@@ -20,6 +20,7 @@ pub fn update_results_from_picker(store: &mut ColorStore, result: &ColorPickerRe
         store.foreground_rgb = (r, g, b);
         store.foreground_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
         store.foreground = BigColor::from_rgb(r, g, b, 1.0);
+        store.foreground_is_dark = store.foreground.is_dark();
     }
 
     // Met à jour background si sélectionné
@@ -28,6 +29,7 @@ pub fn update_results_from_picker(store: &mut ColorStore, result: &ColorPickerRe
         store.background_rgb = (r, g, b);
         store.background_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
         store.background = BigColor::from_rgb(r, g, b, 1.0);
+        store.background_is_dark = store.background.is_dark();
     }
 
     // Calcule le ratio de contraste

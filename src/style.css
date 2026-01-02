@@ -3,6 +3,12 @@
    style.css - Styles for the Color Contrast Analyser
    ============================================================================= */
 
+:root {
+  --text-dark-color: #111111;
+  --text-light-color: #eeeeee;
+  --text-label-color:#64A0DD;
+}
+
 /* -----------------------------------------------------------------------------
    RESET ET BASE
    RESET AND BASE
@@ -21,34 +27,39 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #1a1a2e;
-  color: #eee;
-  min-height: 100vh;
+  color: var(--text-light-color);
+}
+
+strong {
+  color: var(--text-label-color);
 }
 
 /* -----------------------------------------------------------------------------
-   CONTENEUR PRINCIPAL
-   MAIN CONTAINER
+   SECTION DES COULEURS
+   COLORS SECTION
    ----------------------------------------------------------------------------- */
 
-/* Conteneur principal avec centrage du texte */
-/* Main container with centered text */
-.container {
-  padding: 40px;
+.colors {
+  display: flex;
+  justify-content: space-evenly;
+
+  & > section {
+    width: 50%;
+    & > div {
+      display: flex;
+      justify-content: space-evenly;
+    }
+  }
 }
-
-/* -----------------------------------------------------------------------------
-   BOUTON DE SÉLECTION DE COULEUR
-   COLOR PICKER BUTTON
-   ----------------------------------------------------------------------------- */
 
 /* Bouton principal pour lancer le sélecteur de couleur */
 /* Main button to launch color picker */
 .pick-btn {
   background: #4a90d9;
-  color: white;
+  color: var(--text-label-color);
   border: none;
-  padding: 14px 32px;
-  font-size: 16px;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 8px;
   cursor: pointer;
 }
@@ -72,21 +83,24 @@ body {
    RESULTS AREA
    ----------------------------------------------------------------------------- */
 
-/* Conteneur des résultats - caché par défaut */
-/* Results container - hidden by default */
-.result {
-  margin-top: 40px;
-}
-
-/* Aperçu visuel de la couleur - carré coloré */
-/* Visual color preview - colored square */
+/* Aperçu visuel de la couleur */
+/* Visual color preview */
 .color-preview {
-  width: 5rem;
-  height: 5rem;
-  border-radius: 1rem;
-  border: 3px solid rgba(255,255,255,0.2);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    display: inline-block;
+  forced-color-adjust: none;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  border-radius: 0.5rem;
+  margin: 0.5rem;
+  padding: 0.5rem;
+  color: var(--text-dark-color);
+  h2 {
+    font-weight: normal;
+    font-size: 1rem;
+  }
+  &.isDark {
+    color: var(--text-light-color);
+  }
 }
 
 /* -----------------------------------------------------------------------------
@@ -98,59 +112,31 @@ body {
 /* Color information container (hex, RGB) */
 .color-info {
   background: rgba(255,255,255,0.1);
-  padding: 20px;
-  border-radius: 8px;
-  display: inline-block;
+  padding: 1rem;
+  margin: 1rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
 }
 
-/* Paragraphes dans le conteneur d'infos */
-/* Paragraphs in info container */
-.color-info p {
-  margin: 8px 0;
-  font-size: 16px;
-}
-
-/* Labels en gras (RGB:, etc.) */
-/* Bold labels (RGB:, etc.) */
-.color-info strong {
-  color: #4a90d9;
-}
-
-/* -----------------------------------------------------------------------------
-   VALEUR HEXADÉCIMALE
-   HEXADECIMAL VALUE
-   ----------------------------------------------------------------------------- */
-
-/* Affichage de la valeur hexadécimale - cliquable pour copier */
-/* Hexadecimal value display - clickable to copy */
+/* Affichage de la valeur hexadécimale */
+/* Hexadecimal value display */
 .hex-value {
   font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 24px;
   letter-spacing: 2px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
 }
 
 /* -----------------------------------------------------------------------------
    RATIO DE CONTRAST
    CONTRAST RATIO
    ----------------------------------------------------------------------------- */
-
 .contrast-ratio {
-  margin-top: 20px;
-  padding: 12px 16px;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  margin: 0.5rem;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-}
-
-.contrast-ratio p {
-  font-size: 14px;
-  color: #aaa;
-}
-
-.contrast-ratio strong {
-  color: #4a90d9;
+  border-radius: 0.5rem;
 }
 
 /* -----------------------------------------------------------------------------
@@ -158,17 +144,9 @@ body {
    ICC PROFILE STATUS
    ----------------------------------------------------------------------------- */
 .icc-status {
-  margin-top: 20px;
-  padding: 12px 16px;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  margin: 0.5rem;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-}
-
-.icc-status p {
-  font-size: 14px;
-  color: #aaa;
-}
-
-.icc-status strong {
-  color: #4a90d9;
+  border-radius: 0.5rem;
 }

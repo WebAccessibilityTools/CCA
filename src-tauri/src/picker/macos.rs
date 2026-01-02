@@ -1226,7 +1226,7 @@ fn draw_view(view: &NSView) {
     // Dessine l'overlay semi-transparent
     // -------------------------------------------------------------------------
     // Crée une couleur noire avec 5% d'opacité
-    let overlay_color = NSColor::colorWithCalibratedWhite_alpha(0.0, 0.05);
+    let overlay_color = NSColor::colorWithCalibratedWhite_alpha(0.0, 0.0);
     // Définit comme couleur de remplissage
     overlay_color.set();
 

@@ -41,6 +41,10 @@ pub struct ColorStore {
     /// Foreground color in hexadecimal format
     pub foreground_hex: String,
 
+    /// Si la couleur est sombre
+    /// If the colour is dark
+    pub foreground_is_dark: bool,
+
     /// Couleur d'arrière-plan au format RGB (r, g, b)
     /// Background color in RGB format (r, g, b)
     pub background_rgb: (u8, u8, u8),
@@ -48,6 +52,10 @@ pub struct ColorStore {
     /// Couleur d'arrière-plan au format hexadécimal
     /// Background color in hexadecimal format
     pub background_hex: String,
+
+    /// Si la couleur est sombre
+    /// If the colour is dark
+    pub background_is_dark: bool,
 
     /// Mode continue activé
     /// Continue mode enabled
@@ -86,8 +94,10 @@ impl Default for ColorStore {
             background: bc,
             foreground_rgb: config::DEFAULT_FOREGROUND_RGB,
             foreground_hex: format!("#{:02X}{:02X}{:02X}", fr, fg, fb),
+            foreground_is_dark: true,
             background_rgb: config::DEFAULT_BACKGROUND_RGB,
             background_hex: format!("#{:02X}{:02X}{:02X}", br, bg, bb),
+            background_is_dark: false,
             continue_mode: false,
             contrast_ratio_raw: contrast_ratio,
             contrast_ratio_rounded: contrast_ratio_rounded,
@@ -158,11 +168,13 @@ pub fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, 
                 store.foreground_rgb = (r, g, b);
                 store.foreground_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
                 store.foreground = BigColor::from_rgb(r, g, b, 1.0);
+                store.foreground_is_dark = store.foreground.is_dark();
             }
             "background" => {
                 store.background_rgb = (r, g, b);
                 store.background_hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
                 store.background = BigColor::from_rgb(r, g, b, 1.0);
+                store.background_is_dark = store.background.is_dark();
             }
             _ => return, // Clé inconnue / Unknown key
         }
