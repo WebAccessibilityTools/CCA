@@ -86,6 +86,14 @@ export interface UIStore {
   // Currently selected ICC profile
   currentICCProfile: string;
 
+
+  // WCAG Levels
+  level143Regular: boolean;
+  level143Large: boolean;
+  level146Regular: boolean;
+  level146Large: boolean;
+  level1411: boolean;
+
   // Méthode pour lancer le sélecteur de couleur
   // Method to launch the color picker
   pickColor(fg: boolean): Promise<void>;
@@ -140,6 +148,14 @@ export const UIStore = {
   // Initial state: default ICC profile (Auto)
   currentICCProfile: 'Auto',
 
+
+  // WCAG Levels
+  level143Regular: true,
+  level143Large: true,
+  level146Regular: true,
+  level146Large: true,
+  level1411: true,
+
   // Méthode asynchrone pour lancer le sélecteur de couleur
   // Asynchronous method to launch the color picker
   async pickColor(this: UIStore, fg: boolean = true) {
@@ -170,7 +186,7 @@ export const UIStore = {
   // Method to synchronize Alpine store with Tauri store
   updateFromTauriStore(this: UIStore, store: BackendStore) {
     this.platform = store.platform;
-    
+
     // Déstructure le tuple RGB de la couleur de premier plan
     // Destructure RGB tuple of foreground color
     const [fr, fg, fb] = store.foreground_rgb;
@@ -205,5 +221,23 @@ export const UIStore = {
 
     this.contrastRatio = `${store.contrast_ratio_rounded}:1`;
 
+    // Update WCAG Level rules, based on contrast ratio
+    this.level143Regular = true;
+    this.level143Large = true;
+    this.level146Regular = true;
+    this.level146Large = true;
+    this.level1411 = true;
+
+    if (store.contrast_ratio_rounded < 7) {
+      this.level146Regular = false;
+    }
+    if (store.contrast_ratio_rounded < 4.5) {
+      this.level143Regular = false;
+      this.level146Large = false;
+    }
+    if (store.contrast_ratio_rounded < 3) {
+      this.level143Large = false;
+      this.level1411 = false;
+    }
   }
 };

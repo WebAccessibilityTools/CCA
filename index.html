@@ -80,6 +80,31 @@
           <strong>Contrast Ratio:</strong>
           <span x-text="$store.uiStore.contrastRatio">xxx:1</span>
         </p>
+        <p>
+          <strong>1.4.3 Regular:</strong>
+          <span x-show="$store.uiStore.level143Regular">PASS</span>
+          <span x-show="!$store.uiStore.level143Regular">FAIL</span>
+        </p>
+        <p>
+          <strong>1.4.3 Large:</strong>
+          <span x-show="$store.uiStore.level143Large">PASS</span>
+          <span x-show="!$store.uiStore.level143Large">FAIL</span>
+        </p>
+        <p>
+          <strong>1.4.6 Regular:</strong>
+          <span x-show="$store.uiStore.level146Regular">PASS</span>
+          <span x-show="!$store.uiStore.level146Regular">FAIL</span>
+        </p>
+        <p>
+          <strong>1.4.6 Large:</strong>
+          <span x-show="$store.uiStore.level146Large">PASS</span>
+          <span x-show="!$store.uiStore.level146Large">FAIL</span>
+        </p>
+        <p>
+          <strong>1.4.11:</strong>
+          <span x-show="$store.uiStore.level1411">PASS</span>
+          <span x-show="!$store.uiStore.level1411">FAIL</span>
+        </p>
       </section>
 
       <!-- ICC Profile Status (debug/info) -->
