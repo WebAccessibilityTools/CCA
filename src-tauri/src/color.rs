@@ -3,7 +3,7 @@
 // =============================================================================
 
 use bigcolor::BigColor;
-use crate::store::ColorStore;
+use crate::store::ResultStore;
 use crate::picker::common::ColorPickerResult;
 use crate::config;
 
@@ -13,7 +13,7 @@ use crate::config;
 /// # Arguments
 /// * `store` - Le store à mettre à jour / The store to update
 /// * `result` - Le résultat du color picker / The color picker result
-pub fn update_results_from_picker(store: &mut ColorStore, result: &ColorPickerResult) {
+pub fn update_results_from_picker(store: &mut ResultStore, result: &ColorPickerResult) {
     // Met à jour foreground si sélectionné
     // Update foreground if selected
     if let Some((r, g, b)) = result.foreground {

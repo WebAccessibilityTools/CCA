@@ -17,7 +17,7 @@ import Alpine from 'alpinejs';
 
 // Import du store et des interfaces depuis store.ts
 // Import store and interfaces from store.ts
-import { UIStore, ColorStore } from './store';
+import { UIStore, BackendStore } from './store';
 
 // =============================================================================
 // CONFIGURATION DU STORE ALPINE.JS
@@ -45,7 +45,7 @@ Alpine.start();
   try {
     // Appelle la commande get_store pour obtenir l'état actuel du backend
     // Call get_store command to get current backend state
-    const initialStore = await invoke<ColorStore>('get_store');
+    const initialStore = await invoke<BackendStore>('get_store');
 
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
@@ -62,7 +62,7 @@ Alpine.start();
 
   // Étape 2 : Écoute en continu des mises à jour du store Tauri
   // Step 2: Continuously listen for Tauri store updates
-  await listen<ColorStore>('store-updated', (event) => {
+  await listen<BackendStore>('store-updated', (event) => {
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
     const alpineStore = Alpine.store('uiStore') as UIStore;

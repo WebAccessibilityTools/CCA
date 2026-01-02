@@ -151,7 +151,7 @@ pub fn run() {
         // Initialise l'état global du color store
         // Initialize global color store state
         .manage(store::AppState {
-            store: Mutex::new(store::ColorStore::default()),
+            store: Mutex::new(store::ResultStore::default()),
         })
         // Configure le menu de l'application
         // Configure the application menu

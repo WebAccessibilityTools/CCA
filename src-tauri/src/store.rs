@@ -18,7 +18,7 @@ use bigcolor::BigColor;
 /// Structure du store - contient toutes les données réactives
 /// Store structure - contains all reactive data
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ColorStore {
+pub struct ResultStore {
     /// Plateforme actuelle (macos, windows, linux)
     /// Current platform (macos, windows, linux)
     pub platform: &'static str,
@@ -71,7 +71,7 @@ pub struct ColorStore {
     pub contrast_ratio_rounded: f32,
 }
 
-impl Default for ColorStore {
+impl Default for ResultStore {
     fn default() -> Self {
         let (fr, fg, fb) = config::DEFAULT_FOREGROUND_RGB;
         let (br, bg, bb) = config::DEFAULT_BACKGROUND_RGB;
@@ -108,7 +108,7 @@ impl Default for ColorStore {
 /// État de l'application wrappé dans un Mutex pour thread-safety
 /// Application state wrapped in Mutex for thread-safety
 pub struct AppState {
-    pub store: Mutex<ColorStore>,
+    pub store: Mutex<ResultStore>,
 }
 
 // =============================================================================
@@ -119,7 +119,7 @@ pub struct AppState {
 /// Récupère l'état actuel du store
 /// Gets the current store state
 #[tauri::command]
-pub fn get_store(state: tauri::State<AppState>) -> ColorStore {
+pub fn get_store(state: tauri::State<AppState>) -> ResultStore {
     // Verrouille le mutex et clone le contenu
     // Lock the mutex and clone the content
     state.store.lock().unwrap().clone()
@@ -195,7 +195,7 @@ pub fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, 
 pub fn clear_store(app: AppHandle, state: tauri::State<AppState>) {
     {
         let mut store = state.store.lock().unwrap();
-        *store = ColorStore::default();
+        *store = ResultStore::default();
         let _ = app.emit("store-updated", store.clone());
     }
 }
