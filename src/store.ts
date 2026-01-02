@@ -10,6 +10,9 @@ import { invoke } from "@tauri-apps/api/core";
 // Interface pour le store Tauri (état global côté backend)
 // Interface for Tauri store (global state on backend side)
 export interface ColorStore {
+  // Platform
+  platform: string;
+
   // Couleur de premier plan au format RGB [r, g, b]
   // Foreground color in RGB format [r, g, b]
   foreground_rgb: [number, number, number];
@@ -37,6 +40,9 @@ export interface ColorStore {
 // Interface pour le store Alpine.js du color picker (état local côté frontend)
 // Interface for Alpine.js color picker store (local state on frontend side)
 export interface UIStore {
+  // Platform
+  platform: string;
+
   // Indique si une sélection de couleur est en cours
   // Indicates if a color selection is in progress
   isPicking: boolean;
@@ -60,6 +66,10 @@ export interface UIStore {
   // Contrast Ratio Rounded
   contrastRatio: string;
 
+  // Profil ICC actuellement sélectionné
+  // Currently selected ICC profile
+  currentICCProfile: string;
+
   // Méthode pour lancer le sélecteur de couleur
   // Method to launch the color picker
   pickColor(fg: boolean): Promise<void>;
@@ -77,6 +87,8 @@ export interface UIStore {
 // Configuration du store Alpine.js exportée pour utilisation dans main.ts
 // Alpine.js store configuration exported for use in main.ts
 export const UIStore = {
+  platform: 'unknown',
+
   // État initial : aucune sélection en cours
   // Initial state: no selection in progress
   isPicking: false,
@@ -99,6 +111,10 @@ export const UIStore = {
 
   // Initial state: Contrast ratio
   contrastRatio: 'xxx:1',
+
+  // État initial : profil ICC par défaut (Auto)
+  // Initial state: default ICC profile (Auto)
+  currentICCProfile: 'Auto',
 
   // Méthode asynchrone pour lancer le sélecteur de couleur
   // Asynchronous method to launch the color picker
@@ -129,6 +145,8 @@ export const UIStore = {
   // Méthode pour synchroniser le store Alpine avec le store Tauri
   // Method to synchronize Alpine store with Tauri store
   updateFromTauriStore(this: UIStore, store: ColorStore) {
+    this.platform = store.platform;
+    
     // Déstructure le tuple RGB de la couleur de premier plan
     // Destructure RGB tuple of foreground color
     const [fr, fg, fb] = store.foreground_rgb;

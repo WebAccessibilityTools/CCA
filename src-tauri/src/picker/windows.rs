@@ -68,9 +68,9 @@ const CAPTURED_PIXELS_MAX: f64 = 21.0;
 /// Increment for captured pixels count
 const CAPTURED_PIXELS_STEP: f64 = 2.0;
 
-/// Nom de la classe de fenêtre Windows
-/// Windows window class name
-const WINDOW_CLASS: &str = "ColorPickerFullscreen";
+/// Préfixe du nom de la classe de fenêtre Windows (sera rendu unique avec timestamp)
+/// Windows window class name prefix (will be made unique with timestamp)
+const WINDOW_CLASS_PREFIX: &str = "ColorPickerFullscreen_";
 
 /// Identifiant du timer pour rafraîchissement
 /// Timer ID for refresh
@@ -88,6 +88,10 @@ static GDIPLUS_TOKEN: Mutex<usize> = Mutex::new(0);
 /// Handle de la fenêtre (stocké séparément car HWND n'est pas Send)
 /// Window handle (stored separately because HWND is not Send)
 static WINDOW_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Handle de la fenêtre précédente pour restaurer le focus après fermeture
+/// Previous window handle to restore focus after closing
+static PREVIOUS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 // =============================================================================
 // ÉTAT GLOBAL
@@ -1158,18 +1162,26 @@ fn handle_wheel(hwnd: HWND, delta: i16) {
 }
 
 fn select_color() {
+    // Indique si on doit quitter après la sélection
+    // Indicates if we should quit after selection
     let should_quit;
     
     if let Ok(mut state) = STATE.lock() {
+        // Récupère la couleur actuelle sous le curseur
+        // Get current color under cursor
         let color = state.color;
         
         if state.continue_mode {
+            // Mode continue : on capture les deux couleurs
+            // Continue mode: capture both colors
             let has_other = if state.fg_mode {
                 state.bg_color.is_some()
             } else {
                 state.fg_color.is_some()
             };
             
+            // Stocke la couleur dans le slot approprié
+            // Store color in appropriate slot
             if state.fg_mode {
                 state.fg_color = Some(color);
             } else {
@@ -1177,6 +1189,8 @@ fn select_color() {
             }
             
             if has_other {
+                // On a les deux couleurs, on peut quitter
+                // We have both colors, we can quit
                 state.quit = true;
                 should_quit = true;
             } else {
@@ -1185,6 +1199,8 @@ fn select_color() {
                 should_quit = false;
             }
         } else {
+            // Mode normal : une seule couleur
+            // Normal mode: single color
             if state.fg_mode {
                 state.fg_color = Some(color);
             } else {
@@ -1198,7 +1214,30 @@ fn select_color() {
     }
     
     if should_quit {
-        unsafe { PostQuitMessage(0); }
+        // Attend que le bouton de la souris soit relâché avant de quitter
+        // Wait for mouse button to be released before quitting
+        // Cela évite que le clic soit propagé à la fenêtre en dessous
+        // This prevents the click from being propagated to the window below
+        unsafe {
+            // Attend le relâchement du bouton gauche de la souris
+            // Wait for left mouse button release
+            while (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000u16 as i16) != 0 {
+                // Traite les messages en attente pour ne pas bloquer
+                // Process pending messages to avoid blocking
+                let mut msg = MSG::default();
+                if PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                // Petite pause pour éviter de consommer trop de CPU
+                // Small pause to avoid consuming too much CPU
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            
+            // Maintenant on peut quitter en toute sécurité
+            // Now we can safely quit
+            PostQuitMessage(0);
+        }
     } else {
         // Force le redessin pour montrer la couleur capturée
         // Force redraw to show captured color
@@ -1252,14 +1291,44 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRE
                 LRESULT(0)
             }
             WM_LBUTTONDOWN => {
+                // Sélectionne la couleur
+                // Select the color
                 select_color();
+                // Retourne 0 pour indiquer que le message a été traité
+                // Return 0 to indicate message was handled
+                LRESULT(0)
+            }
+            WM_LBUTTONUP => {
+                // Capture le relâchement du clic pour éviter la propagation
+                // Capture click release to prevent propagation
                 LRESULT(0)
             }
             WM_RBUTTONDOWN => {
+                // Annule et quitte
+                // Cancel and quit
                 if let Ok(mut state) = STATE.lock() {
                     state.quit = true;
                 }
+                
+                // Attend que le bouton droit soit relâché avant de quitter
+                // Wait for right mouse button to be released before quitting
+                while (GetAsyncKeyState(VK_RBUTTON.0 as i32) & 0x8000u16 as i16) != 0 {
+                    // Traite les messages en attente
+                    // Process pending messages
+                    let mut msg = MSG::default();
+                    if PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                        let _ = TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                
                 PostQuitMessage(0);
+                LRESULT(0)
+            }
+            WM_RBUTTONUP => {
+                // Capture le relâchement du clic droit pour éviter la propagation
+                // Capture right click release to prevent propagation
                 LRESULT(0)
             }
             WM_KEYDOWN => {
@@ -1300,7 +1369,19 @@ pub fn run(fg: bool) -> ColorPickerResult {
     
     unsafe {
         let hinst = GetModuleHandleW(None).unwrap();
-        let class_wide: Vec<u16> = WINDOW_CLASS.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        // Sauvegarde la fenêtre active actuelle pour restaurer le focus après
+        // Save current active window to restore focus later
+        let prev_window = GetForegroundWindow();
+        PREVIOUS_HWND.store(prev_window.0 as isize, std::sync::atomic::Ordering::SeqCst);
+        
+        // Génère un nom de classe unique avec timestamp pour éviter les conflits
+        // Generate unique class name with timestamp to avoid conflicts
+        let unique_class_name = format!("{}{}", WINDOW_CLASS_PREFIX, std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0));
+        let class_wide: Vec<u16> = unique_class_name.encode_utf16().chain(std::iter::once(0)).collect();
         let class_name = PCWSTR(class_wide.as_ptr());
         
         let wc = WNDCLASSEXW {
@@ -1370,9 +1451,39 @@ pub fn run(fg: bool) -> ColorPickerResult {
             DispatchMessageW(&msg);
         }
         
+        // Libère la capture de la souris
+        // Release mouse capture
         let _ = ReleaseCapture();
-        let _ = DestroyWindow(hwnd);
+        
+        // Détruit la fenêtre et attend qu'elle soit complètement détruite
+        // Destroy window and wait for it to be completely destroyed
+        if DestroyWindow(hwnd).is_ok() {
+            // Traite les messages restants pour s'assurer que WM_DESTROY est traité
+            // Process remaining messages to ensure WM_DESTROY is handled
+            let mut msg = MSG::default();
+            while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                if msg.message == WM_QUIT {
+                    break;
+                }
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        
+        // Désenregistre la classe de fenêtre
+        // Unregister window class
         let _ = UnregisterClassW(class_name, hinst);
+        
+        // Restaure le focus sur la fenêtre précédente (l'application Tauri)
+        // Restore focus to previous window (Tauri application)
+        let prev_hwnd_value = PREVIOUS_HWND.load(std::sync::atomic::Ordering::SeqCst);
+        if prev_hwnd_value != 0 {
+            let prev_hwnd = HWND(prev_hwnd_value as *mut std::ffi::c_void);
+            if !prev_hwnd.is_invalid() {
+                let _ = SetForegroundWindow(prev_hwnd);
+                let _ = SetFocus(prev_hwnd);
+            }
+        }
     }
     
     cleanup_screen_bitmap();

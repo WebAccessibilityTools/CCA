@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "cca",
+  "productName": "CCA",
   "version": "0.1.0",
   "identifier": "com.cca.app",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "cca",
+        "title": "Colour Contrast Analyser",
         "width": 600,
         "height": 500,
         "resizable": true,

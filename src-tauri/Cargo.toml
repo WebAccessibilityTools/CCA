@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -68,6 +68,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSResponder",       # Event responder chain / Chaîne de répondeurs
     "NSGraphicsContext", # Graphics context / Contexte graphique
     "NSColor",           # Color handling / Gestion des couleurs
+    "NSColorSpace",      # Color space / Espace colorimétrique (pour profils ICC)
     "NSApplication",     # Application lifecycle / Cycle de vie de l'application
     "NSRunningApplication", # Running app info / Info app en cours
     "NSImage",           # Image handling / Gestion des images
@@ -75,7 +76,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSAffineTransform", # Transformations
     "NSCursor",          # Cursor management / Gestion du curseur
     "NSFont",            # Font handling / Gestion des polices
-    "NSStringDrawing"    # String drawing / Dessin de texte
+    "NSStringDrawing",   # String drawing / Dessin de texte
 ] }
 
 # =============================================================================

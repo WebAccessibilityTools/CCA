@@ -19,6 +19,10 @@ use bigcolor::BigColor;
 /// Store structure - contains all reactive data
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ColorStore {
+    /// Plateforme actuelle (macos, windows, linux)
+    /// Current platform (macos, windows, linux)
+    pub platform: &'static str,
+
     /// Couleur de premier plan (BigColor) - ignorée par la sérialisation
     /// Foreground color (BigColor) - ignored by serialization
     #[serde(skip)]
@@ -68,6 +72,16 @@ impl Default for ColorStore {
         let contrast_ratio = fc.get_contrast_ratio(&bc);
         let contrast_ratio_rounded = (contrast_ratio * config::ROUNDING_FACTOR).round() / config::ROUNDING_FACTOR;
         Self {
+            // Plateforme détectée à la compilation
+            // Platform detected at compile time
+            #[cfg(target_os = "macos")]
+            platform: "macos",
+            #[cfg(target_os = "windows")]
+            platform: "windows",
+            #[cfg(target_os = "linux")]
+            platform: "linux",
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            platform: "unknown",
             foreground: fc,
             background: bc,
             foreground_rgb: config::DEFAULT_FOREGROUND_RGB,

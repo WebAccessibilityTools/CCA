@@ -754,15 +754,18 @@ fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
 }
 
 /// Extrait la couleur du pixel central d'une image CGImage
+/// et applique la conversion ICC si un profil est sélectionné
 ///
 /// # Arguments
 /// * `image` - L'image capturée
+/// * `target_pixels` - Nombre de pixels cibles pour le calcul du centre
 ///
 /// # Retourne
-/// * `Some((r, g, b))` - Les composantes RGB en u8 [0-255]
+/// * `Some((r, g, b))` - Les composantes RGB en u8 [0-255] converties en sRGB
 /// * `None` - Si l'extraction a échoué
 fn get_center_pixel_from_image(image: &CGImage, target_pixels: f64) -> Option<(u8, u8, u8)> {
     // Récupère les dimensions de l'image
+    // Get image dimensions
     let img_width = image.width() as f64;
     let img_height = image.height() as f64;
     
@@ -810,25 +813,56 @@ fn get_center_pixel_from_image(image: &CGImage, target_pixels: f64) -> Option<(u
     let center_y = (img_height - center_y_from_bottom).floor() as usize;
     
     // Récupère les données brutes de l'image
+    // Get raw image data
     let data = image.data();
     let bytes_per_row = image.bytes_per_row() as usize;
     let bits_per_pixel = image.bits_per_pixel() as usize;
     let bytes_per_pixel = bits_per_pixel / 8;
     
     // Calcule l'offset du pixel central dans les données
+    // Calculate center pixel offset in data
     let offset = (center_y * bytes_per_row) + (center_x * bytes_per_pixel);
     
     // Vérifie qu'on a assez de données
+    // Check we have enough data
     let data_len = data.len() as usize;
     if offset + bytes_per_pixel <= data_len {
         // Les données sont en format BGRA (Blue, Green, Red, Alpha)
+        // Data is in BGRA format (Blue, Green, Red, Alpha)
         let b = data[offset];
         let g = data[offset + 1];
         let r = data[offset + 2];
-        Some((r, g, b))
+        
+        // Applique la conversion ICC si un profil est sélectionné
+        // Apply ICC conversion if a profile is selected
+        let (r_out, g_out, b_out) = apply_icc_conversion(r, g, b);
+        
+        Some((r_out, g_out, b_out))
     } else {
         None
     }
+}
+
+/// Applique la conversion ICC depuis le profil sélectionné vers sRGB
+/// Applies ICC conversion from selected profile to sRGB
+///
+/// # Arguments
+/// * `r`, `g`, `b` - Composantes RGB brutes capturées / Raw captured RGB components
+///
+/// # Returns
+/// * `(u8, u8, u8)` - Composantes RGB converties en sRGB / RGB components converted to sRGB
+fn apply_icc_conversion(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
+    // Import du module icc pour la conversion
+    // Import icc module for conversion
+    use crate::icc;
+    
+    // Récupère l'espace colorimétrique sélectionné
+    // Get the selected color space
+    let source_colorspace = icc::get_selected_nscolorspace();
+    
+    // Convertit la couleur vers sRGB en utilisant le profil sélectionné
+    // Convert color to sRGB using the selected profile
+    icc::convert_color_to_srgb(r, g, b, source_colorspace.as_deref())
 }
 
 /// Capture une zone et retourne à la fois l'image et la couleur du pixel central

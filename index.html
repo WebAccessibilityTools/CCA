@@ -59,10 +59,20 @@
       </section>
 
       <!-- Contrast Ratio -->
-       <section>
-        <p
-        x-text="$store.uiStore.contrastRatio"
-        >xxx:1</p>
+       <section class="contrast-ratio">
+        <p>
+          <strong>Contrast Ratio:</strong> 
+          <span x-text="$store.uiStore.contrastRatio"
+          >xxx:1</span>
+        </p>
+       </section>
+
+       <!-- ICC Profile Status (debug/info) -->
+       <section class="icc-status" x-show="$store.uiStore.platform === 'macos'">
+        <p>
+          <strong>ICC Profile:</strong> 
+          <span x-text="$store.uiStore.currentICCProfile"></span>
+        </p>
        </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

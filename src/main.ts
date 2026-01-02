@@ -73,4 +73,44 @@ Alpine.start();
     // This makes the interface reactive to backend changes
     alpineStore.updateFromTauriStore(event.payload);
   });
+
+  // Étape 3 : Écoute les changements de profil ICC depuis le menu
+  // Step 3: Listen for ICC profile changes from the menu
+  await listen<string>('icc-profile-changed', (event) => {
+    // Récupère le nom du profil ICC sélectionné
+    // Get the selected ICC profile name
+    const profileName = event.payload;
+
+    // Affiche le profil sélectionné dans la console (pour debug)
+    // Display selected profile in console (for debug)
+    console.log('ICC Profile changed to:', profileName);
+
+    // Récupère la référence au store Alpine.js
+    // Get reference to Alpine.js store
+    const alpineStore = Alpine.store('uiStore') as UIStore;
+
+    // Met à jour le profil ICC dans le store Alpine
+    // Update ICC profile in Alpine store
+    alpineStore.currentICCProfile = profileName;
+  });
+
+  // Étape 4 : Récupère le profil ICC initial
+  // Step 4: Get initial ICC profile
+  try {
+    // Appelle la commande pour obtenir le profil ICC actuellement sélectionné
+    // Call command to get currently selected ICC profile
+    const currentProfile = await invoke<string | null>('get_selected_icc_profile');
+
+    // Récupère la référence au store Alpine.js
+    // Get reference to Alpine.js store
+    const alpineStore = Alpine.store('uiStore') as UIStore;
+
+    // Met à jour le profil ICC dans le store (ou 'Auto' par défaut)
+    // Update ICC profile in store (or 'Auto' as default)
+    alpineStore.currentICCProfile = currentProfile || 'Auto';
+  } catch (error) {
+    // Affiche l'erreur si la récupération échoue
+    // Display error if retrieval fails
+    console.error('Error loading ICC profile:', error);
+  }
 })();

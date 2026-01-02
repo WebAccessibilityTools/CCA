@@ -131,3 +131,44 @@ body {
   padding: 4px 8px;
   border-radius: 4px;
 }
+
+/* -----------------------------------------------------------------------------
+   RATIO DE CONTRAST
+   CONTRAST RATIO
+   ----------------------------------------------------------------------------- */
+
+.contrast-ratio {
+  margin-top: 20px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.contrast-ratio p {
+  font-size: 14px;
+  color: #aaa;
+}
+
+.contrast-ratio strong {
+  color: #4a90d9;
+}
+
+/* -----------------------------------------------------------------------------
+   STATUT DU PROFIL ICC
+   ICC PROFILE STATUS
+   ----------------------------------------------------------------------------- */
+.icc-status {
+  margin-top: 20px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.icc-status p {
+  font-size: 14px;
+  color: #aaa;
+}
+
+.icc-status strong {
+  color: #4a90d9;
+}
