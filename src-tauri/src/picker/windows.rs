@@ -105,8 +105,8 @@ static STATE: Mutex<PickerState> = Mutex::new(PickerState::new());
 /// Structure contenant l'état complet du color picker
 /// Structure containing the complete color picker state
 struct PickerState {
-    cursor_x: i32,                      // Position X du curseur / Cursor X position
-    cursor_y: i32,                      // Position Y du curseur / Cursor Y position
+    cursor_x: i32,                      // Position X du curseur (coordonnées écran) / Cursor X position (screen coords)
+    cursor_y: i32,                      // Position Y du curseur (coordonnées écran) / Cursor Y position (screen coords)
     color: (u8, u8, u8),                // Couleur sous le curseur (R, G, B) / Color under cursor
     fg_color: Option<(u8, u8, u8)>,     // Couleur FG sélectionnée / Selected FG color
     bg_color: Option<(u8, u8, u8)>,     // Couleur BG sélectionnée / Selected BG color
@@ -115,8 +115,10 @@ struct PickerState {
     zoom: f64,                          // Facteur de zoom actuel / Current zoom factor
     captured: f64,                      // Nombre de pixels capturés / Number of captured pixels
     quit: bool,                         // Flag pour quitter l'application / Flag to quit application
-    screen_width: i32,                  // Largeur de l'écran en pixels / Screen width in pixels
-    screen_height: i32,                 // Hauteur de l'écran en pixels / Screen height in pixels
+    screen_width: i32,                  // Largeur du bureau virtuel / Virtual desktop width
+    screen_height: i32,                 // Hauteur du bureau virtuel / Virtual desktop height
+    virtual_left: i32,                  // Origine X du bureau virtuel (peut être négatif) / Virtual desktop X origin
+    virtual_top: i32,                   // Origine Y du bureau virtuel (peut être négatif) / Virtual desktop Y origin
 }
 
 /// Handle du bitmap de capture d'écran (doit être global pour WM_PAINT)
@@ -193,6 +195,8 @@ impl PickerState {
             quit: false,                           // Ne pas quitter / Don't quit
             screen_width: 0,                       // Sera défini lors de la capture / Will be set during capture
             screen_height: 0,                      // Sera défini lors de la capture / Will be set during capture
+            virtual_left: 0,                       // Sera défini lors de la capture / Will be set during capture
+            virtual_top: 0,                        // Sera défini lors de la capture / Will be set during capture
         }
     }
     
@@ -217,14 +221,16 @@ impl PickerState {
 // SCREEN CAPTURE
 // =============================================================================
 
-/// Capture l'écran entier dans un bitmap et extrait les données de pixels
-/// Captures the entire screen into a bitmap and extracts pixel data
+/// Capture le bureau virtuel entier (tous les moniteurs) dans un bitmap et extrait les données de pixels
+/// Captures the entire virtual desktop (all monitors) into a bitmap and extracts pixel data
 fn capture_screen() {
     unsafe {
-        // Récupère les dimensions de l'écran principal
-        // Get the main screen dimensions
-        let width = GetSystemMetrics(SM_CXSCREEN);    // Largeur en pixels / Width in pixels
-        let height = GetSystemMetrics(SM_CYSCREEN);   // Hauteur en pixels / Height in pixels
+        // Récupère les dimensions du bureau virtuel (tous les écrans combinés)
+        // Get virtual desktop dimensions (all screens combined)
+        let virtual_left = GetSystemMetrics(SM_XVIRTUALSCREEN);   // Origine X (peut être < 0) / X origin (can be < 0)
+        let virtual_top = GetSystemMetrics(SM_YVIRTUALSCREEN);    // Origine Y (peut être < 0) / Y origin (can be < 0)
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);         // Largeur totale / Total width
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);        // Hauteur totale / Total height
         
         // Crée des contextes de périphérique (DC) pour la copie
         // Create device contexts (DC) for copying
@@ -240,9 +246,9 @@ fn capture_screen() {
             // Select the bitmap into the memory DC
             SelectObject(hdc_mem, hbitmap);
             
-            // Copie l'écran dans le bitmap (BitBlt = Bit Block Transfer)
-            // Copy the screen to the bitmap (BitBlt = Bit Block Transfer)
-            let _ = BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, 0, 0, SRCCOPY);
+            // Copie le bureau virtuel dans le bitmap (BitBlt = Bit Block Transfer)
+            // Copy virtual desktop to bitmap (BitBlt = Bit Block Transfer)
+            let _ = BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, virtual_left, virtual_top, SRCCOPY);
             
             // Stocke le handle du bitmap pour utilisation ultérieure
             // Store the bitmap handle for later use
@@ -287,11 +293,13 @@ fn capture_screen() {
                 *screen_data = data;
             }
             
-            // Sauvegarde les dimensions de l'écran dans l'état
-            // Save screen dimensions in state
+            // Sauvegarde les dimensions du bureau virtuel dans l'état
+            // Save virtual desktop dimensions in state
             if let Ok(mut state) = STATE.lock() {
                 state.screen_width = width;
                 state.screen_height = height;
+                state.virtual_left = virtual_left;
+                state.virtual_top = virtual_top;
             }
         }
         
@@ -321,35 +329,40 @@ fn cleanup_screen_bitmap() {
     }
 }
 
-/// Récupère la couleur RGB du pixel aux coordonnées (x, y)
-/// Gets the RGB color of the pixel at coordinates (x, y)
+/// Récupère la couleur RGB du pixel aux coordonnées écran (x, y)
+/// Gets the RGB color of the pixel at screen coordinates (x, y)
 /// 
 /// # Arguments
-/// * `x` - Position X du pixel / Pixel X position
-/// * `y` - Position Y du pixel / Pixel Y position
+/// * `x` - Position X du pixel (coordonnées écran, peut être négatif) / Pixel X position (screen coords, can be negative)
+/// * `y` - Position Y du pixel (coordonnées écran, peut être négatif) / Pixel Y position (screen coords, can be negative)
 /// 
 /// # Returns
 /// Tuple (R, G, B) de la couleur du pixel / Tuple (R, G, B) of pixel color
 fn get_pixel_color(x: i32, y: i32) -> (u8, u8, u8) {
-    // Récupère les dimensions de l'écran
-    // Get screen dimensions
-    let (width, height) = {
+    // Récupère les dimensions du bureau virtuel et son origine
+    // Get virtual desktop dimensions and origin
+    let (width, height, virtual_left, virtual_top) = {
         if let Ok(state) = STATE.lock() {
-            (state.screen_width, state.screen_height)
+            (state.screen_width, state.screen_height, state.virtual_left, state.virtual_top)
         } else {
             return (0, 0, 0);                          // Noir si erreur / Black if error
         }
     };
     
+    // Convertit les coordonnées écran en coordonnées bitmap
+    // Convert screen coordinates to bitmap coordinates
+    let bitmap_x = x - virtual_left;
+    let bitmap_y = y - virtual_top;
+    
     // Lit la couleur depuis les données capturées
     // Read color from captured data
     if let Ok(data) = SCREEN_DATA.lock() {
-        // Vérifie que les coordonnées sont dans les limites
-        // Check that coordinates are within bounds
-        if x >= 0 && x < width && y >= 0 && y < height {
+        // Vérifie que les coordonnées sont dans les limites du bitmap
+        // Check that coordinates are within bitmap bounds
+        if bitmap_x >= 0 && bitmap_x < width && bitmap_y >= 0 && bitmap_y < height {
             // Calcule l'index dans le buffer (4 octets par pixel: BGRA)
             // Calculate index in buffer (4 bytes per pixel: BGRA)
-            let idx = ((y * width + x) * 4) as usize;
+            let idx = ((bitmap_y * width + bitmap_x) * 4) as usize;
             if idx + 2 < data.len() {
                 let b = data[idx];                     // Bleu en premier (format BGRA) / Blue first (BGRA format)
                 let g = data[idx + 1];                 // Vert ensuite / Green next
@@ -685,7 +698,7 @@ fn draw_curved_text(
 fn paint_window(_hwnd: HWND, hdc: HDC) {
     // Récupère l'état actuel / Get current state
     let (cursor_x, cursor_y, color, fg_color, bg_color, fg_mode, continue_mode, zoom, captured, 
-         screen_width, screen_height) = {
+         screen_width, screen_height, virtual_left, virtual_top) = {
         let state = match STATE.lock() {
             Ok(s) => s,
             Err(_) => return,
@@ -696,8 +709,14 @@ fn paint_window(_hwnd: HWND, hdc: HDC) {
             state.fg_mode, state.continue_mode,
             state.zoom, state.captured,
             state.screen_width, state.screen_height,
+            state.virtual_left, state.virtual_top,
         )
     };
+    
+    // Convertit les coordonnées écran en coordonnées fenêtre (bitmap)
+    // Convert screen coordinates to window (bitmap) coordinates
+    let window_x = cursor_x - virtual_left;
+    let window_y = cursor_y - virtual_top;
     
     // Récupère les données de l'écran / Get screen data
     let screen_data = match SCREEN_DATA.lock() {
@@ -732,13 +751,15 @@ fn paint_window(_hwnd: HWND, hdc: HDC) {
         }
         
         // Paramètres de la loupe / Magnifier parameters
+        // Utilise window_x/window_y pour le dessin (coordonnées relatives à la fenêtre)
+        // Use window_x/window_y for drawing (coordinates relative to window)
         let mag_size = (captured * zoom) as i32;
         let zoom_i = zoom as i32;
         let captured_i = captured as i32;
         let half_cap = captured_i / 2;
         let border_f = BORDER_WIDTH as f32;
-        let cx_f = cursor_x as f32;
-        let cy_f = cursor_y as f32;
+        let cx_f = window_x as f32;
+        let cy_f = window_y as f32;
         let inner_radius_f = mag_size as f32 / 2.0;
         let outer_radius_f = inner_radius_f + border_f;
         
@@ -825,8 +846,10 @@ fn paint_window(_hwnd: HWND, hdc: HDC) {
                 // Draw each zoomed pixel
                 for py in 0..captured_i {
                     for px in 0..captured_i {
-                        let src_x = cursor_x - half_cap + px;
-                        let src_y = cursor_y - half_cap + py;
+                        // Calcule les coordonnées bitmap (relatives à la fenêtre)
+                        // Calculate bitmap coordinates (relative to window)
+                        let src_x = window_x - half_cap + px;
+                        let src_y = window_y - half_cap + py;
                         
                         let (r, g, b) = if src_x >= 0 && src_x < screen_width && src_y >= 0 && src_y < screen_height {
                             let idx = ((src_y * screen_width + src_x) * 4) as usize;
@@ -992,8 +1015,10 @@ fn paint_window(_hwnd: HWND, hdc: HDC) {
         // =====================================================================
         
         let ret_half = zoom_i / 2;
-        let ret_x = cursor_x - ret_half;
-        let ret_y = cursor_y - ret_half;
+        // Utilise les coordonnées fenêtre pour le réticule
+        // Use window coordinates for reticle
+        let ret_x = window_x - ret_half;
+        let ret_y = window_y - ret_half;
         let gray_pen = CreatePen(PS_SOLID, 1, COLORREF(0x606060));
         let old_pen = SelectObject(hdc_mem, gray_pen);
         let null_brush = GetStockObject(NULL_BRUSH);
@@ -1284,9 +1309,25 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRE
                 LRESULT(0)
             }
             WM_MOUSEMOVE => {
-                let x = (lp.0 & 0xFFFF) as i16 as i32;
-                let y = ((lp.0 >> 16) & 0xFFFF) as i16 as i32;
-                update_cursor_pos(x, y);
+                // Les coordonnées de WM_MOUSEMOVE sont relatives à la fenêtre
+                // WM_MOUSEMOVE coordinates are relative to the window
+                // La fenêtre commence à (virtual_left, virtual_top)
+                // The window starts at (virtual_left, virtual_top)
+                let window_x = (lp.0 & 0xFFFF) as i16 as i32;
+                let window_y = ((lp.0 >> 16) & 0xFFFF) as i16 as i32;
+                
+                // Convertit en coordonnées écran
+                // Convert to screen coordinates
+                let (virtual_left, virtual_top) = if let Ok(state) = STATE.lock() {
+                    (state.virtual_left, state.virtual_top)
+                } else {
+                    (0, 0)
+                };
+                
+                let screen_x = window_x + virtual_left;
+                let screen_y = window_y + virtual_top;
+                
+                update_cursor_pos(screen_x, screen_y);
                 let _ = InvalidateRect(hwnd, None, FALSE);
                 LRESULT(0)
             }
@@ -1400,17 +1441,23 @@ pub fn run(fg: bool) -> ColorPickerResult {
             return ColorPickerResult { foreground: None, background: None, continue_mode: false };
         }
         
-        let screen_width = GetSystemMetrics(SM_CXSCREEN);
-        let screen_height = GetSystemMetrics(SM_CYSCREEN);
+        // Récupère les dimensions du bureau virtuel (tous les écrans combinés)
+        // Get virtual desktop dimensions (all screens combined)
+        let virtual_left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let virtual_top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let virtual_width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let virtual_height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
         
-        // Fenêtre plein écran, toujours au-dessus
-        // Fullscreen window, always on top
+        // Fenêtre plein écran couvrant tous les moniteurs, toujours au-dessus
+        // WS_EX_TOOLWINDOW empêche l'apparition dans la taskbar
+        // WS_EX_NOACTIVATE empêche la fenêtre de prendre le focus d'autres apps
+        // Fullscreen window covering all monitors, always on top
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             class_name,
             w!(""),
             WS_POPUP,
-            0, 0, screen_width, screen_height,
+            virtual_left, virtual_top, virtual_width, virtual_height,
             None, None, hinst, None,
         );
         
