@@ -55,3 +55,6 @@ sudo xattr -cr /Users/[user folder]/Applications/CCA.app
 
 ## Test for ICC profiles
 https://www.color-hex.com/
+
+## i18n
+https://github.com/razein97/tauri-plugin-i18n
