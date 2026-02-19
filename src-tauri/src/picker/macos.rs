@@ -101,6 +101,157 @@ use super::common::{
 use objc2::runtime::Bool;
 
 // =============================================================================
+// FONCTIONS UTILITAIRES (déclarées avant define_class! pour être accessibles)
+// UTILITY FUNCTIONS (declared before define_class! to be accessible)
+// =============================================================================
+
+/// Récupère le facteur d'échelle de l'écran à la position donnée
+/// Gets the scale factor of the screen at the given position
+///
+/// # Arguments
+/// * `screen_x` - Coordonnée X en coordonnées Cocoa globales
+/// * `screen_y` - Coordonnée Y en coordonnées Cocoa globales
+///
+/// # Returns
+/// * `f64` - Le facteur d'échelle (2.0 pour Retina, 1.0 sinon)
+fn get_scale_factor_at_position(screen_x: f64, screen_y: f64) -> f64 {
+    // Récupère le marqueur de thread principal
+    // Get main thread marker
+    let Some(mtm) = MainThreadMarker::new() else {
+        return 2.0; // Default Retina
+    };
+    
+    // Récupère la liste des écrans
+    // Get list of screens
+    let screens = NSScreen::screens(mtm);
+    let count = screens.count();
+    
+    // Parcourt tous les écrans pour trouver celui qui contient le point
+    // Iterate through all screens to find the one containing the point
+    for i in 0..count {
+        unsafe {
+            let screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: i];
+            let frame = screen.frame();
+            let scale = screen.backingScaleFactor();
+            
+            // Vérifie si le point est dans cet écran
+            // Check if point is in this screen
+            // Note: En Cocoa, frame.origin est le coin inférieur gauche
+            // In Cocoa, frame.origin is the bottom-left corner
+            if screen_x >= frame.origin.x 
+                && screen_x <= frame.origin.x + frame.size.width
+                && screen_y >= frame.origin.y 
+                && screen_y <= frame.origin.y + frame.size.height 
+            {
+                return scale;
+            }
+        }
+    }
+    
+    // Fallback: retourne le facteur de l'écran principal
+    // Fallback: return main screen factor
+    if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+        return main_screen.backingScaleFactor();
+    }
+    
+    2.0 // Default Retina
+}
+
+/// Rafraîchit intelligemment les fenêtres overlay du picker
+/// Smart refresh of picker overlay windows
+/// 
+/// Au lieu de rafraîchir toutes les fenêtres (causant clignotement),
+/// cette fonction ne rafraîchit que les fenêtres affectées par le changement
+/// Instead of refreshing all windows (causing flicker),
+/// this function only refreshes windows affected by the change
+fn refresh_picker_windows_smart(old_screen_x: f64, old_screen_y: f64, new_screen_x: f64, new_screen_y: f64) {
+    // Récupère le marqueur de thread principal
+    // Get main thread marker
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    
+    // Récupère l'application partagée
+    // Get shared application
+    let app = NSApplication::sharedApplication(mtm);
+    
+    // Récupère toutes les fenêtres et écrans
+    // Get all windows and screens
+    let windows = app.windows();
+    let window_count = windows.count();
+    let screens = NSScreen::screens(mtm);
+    let screen_count = screens.count();
+    
+    // Trouve les écrans contenant l'ancienne et la nouvelle position
+    // Find screens containing old and new positions
+    let mut old_screen_index: Option<usize> = None;
+    let mut new_screen_index: Option<usize> = None;
+    
+    for i in 0..screen_count {
+        unsafe {
+            let screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: i];
+            let frame = screen.frame();
+            
+            // Vérifie si l'ancienne position est dans cet écran
+            // Check if old position is in this screen
+            if old_screen_x >= frame.origin.x 
+                && old_screen_x <= frame.origin.x + frame.size.width
+                && old_screen_y >= frame.origin.y 
+                && old_screen_y <= frame.origin.y + frame.size.height 
+            {
+                old_screen_index = Some(i);
+            }
+            
+            // Vérifie si la nouvelle position est dans cet écran
+            // Check if new position is in this screen
+            if new_screen_x >= frame.origin.x 
+                && new_screen_x <= frame.origin.x + frame.size.width
+                && new_screen_y >= frame.origin.y 
+                && new_screen_y <= frame.origin.y + frame.size.height 
+            {
+                new_screen_index = Some(i);
+            }
+        }
+    }
+    
+    // Si on est sur le même écran, ne rafraîchir que cette fenêtre
+    // If on same screen, only refresh that window
+    if old_screen_index == new_screen_index {
+        if let Some(screen_idx) = new_screen_index {
+            // Rafraîchit uniquement la fenêtre de cet écran
+            // Only refresh window for this screen
+            unsafe {
+                if screen_idx < window_count {
+                    let window: Retained<NSWindow2> = msg_send![&*windows, objectAtIndex: screen_idx];
+                    if window.level() == 1000 {
+                        if let Some(content_view) = window.contentView() {
+                            content_view.setNeedsDisplay(true);
+                            content_view.displayIfNeeded();
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Changement d'écran : rafraîchir l'ancien ET le nouveau
+        // Screen change: refresh old AND new
+        for idx in [old_screen_index, new_screen_index].iter().filter_map(|&x| x) {
+            unsafe {
+                if idx < window_count {
+                    let window: Retained<NSWindow2> = msg_send![&*windows, objectAtIndex: idx];
+                    if window.level() == 1000 {
+                        if let Some(content_view) = window.contentView() {
+                            content_view.setNeedsDisplay(true);
+                            content_view.displayIfNeeded();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
 // CLASSES PERSONNALISÉES OBJECTIVE-C
 // =============================================================================
 
@@ -139,16 +290,18 @@ define_class!(
         }
 
         // ---------------------------------------------------------------------
-        // acceptsFirstMouse: - Permet à la vue de recevoir le premier clic
-        // acceptsFirstMouse: - Allows the view to receive the first click
+        // acceptsFirstMouse: - Accepte le premier clic sans activation
+        // acceptsFirstMouse: - Accepts first mouse click without activation
         // ---------------------------------------------------------------------
-        /// Indique que cette vue accepte le premier clic même si la fenêtre n'est pas active
-        /// Évite d'avoir à cliquer deux fois (une fois pour activer, une fois pour sélectionner)
-        /// Indicates that this view accepts the first click even if the window is not active
-        /// Avoids having to click twice (once to activate, once to select)
+        /// Indique que cette vue accepte le premier clic de souris
+        /// Sans cela, le premier clic activerait seulement la fenêtre,
+        /// et un second clic serait nécessaire pour déclencher mouseDown:
+        /// Indicates that this view accepts the first mouse click
+        /// Without this, the first click would only activate the window,
+        /// and a second click would be needed to trigger mouseDown:
         #[unsafe(method(acceptsFirstMouse:))]
-        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
-            true // Yes, accept the first mouse click directly
+        fn accepts_first_mouse(&self, _event: &NSEvent) -> bool {
+            true // Yes, always accept the first mouse click
         }
 
         // ---------------------------------------------------------------------
@@ -231,7 +384,7 @@ define_class!(
                 }
                 // Demande un rafraîchissement pour mettre à jour l'affichage
                 // Request a refresh to update the display
-                refresh_all_picker_windows();
+                self.setNeedsDisplay(true);
             } else {
                 // Mode normal OU mode continue après toggle: termine l'application
                 // Normal mode OR continue mode after toggle: stop the application
@@ -250,19 +403,26 @@ define_class!(
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
             // Get the mouse position in window coordinates
+            // Récupère la position de la souris dans les coordonnées de la fenêtre
             let location: NSPoint = event.locationInWindow();
 
             // Get the parent window of this view
+            // Récupère la fenêtre parente de cette vue
             let window_opt: Option<Retained<NSWindow2>> = self.window();
 
             // If we have a valid window
+            // Si nous avons une fenêtre valide
             if let Some(window) = window_opt {
                 // Convert window coordinates to screen coordinates
+                // Convertit les coordonnées de fenêtre en coordonnées d'écran
                 let screen_location: NSPoint = window.convertPointToScreen(location);
 
-                // Récupère le facteur d'échelle de l'écran où se trouve le curseur
-                // Get scale factor of the screen where cursor is located
-                let scale_factor = get_scale_factor_at_position(screen_location.x, screen_location.y);
+                // CORRECTION MULTI-ÉCRAN / MULTI-SCREEN FIX:
+                // Utilise le facteur d'échelle de l'écran où se trouve le curseur,
+                // pas celui de la fenêtre qui reçoit l'événement
+                // Use the scale factor of the screen where the cursor is located,
+                // not the one from the window receiving the event
+                let scale_factor: f64 = get_scale_factor_at_position(screen_location.x, screen_location.y);
 
                 // Récupère le nombre de pixels capturés pour la taille de capture
                 // Get captured pixels count for capture size
@@ -300,7 +460,7 @@ define_class!(
                     }
 
                     // Request a display refresh
-                    refresh_all_picker_windows();
+                    self.setNeedsDisplay(true);
                 }
             }
         }
@@ -351,7 +511,7 @@ define_class!(
                 }
 
                 // Request a refresh to display the change
-                refresh_all_picker_windows();
+                self.setNeedsDisplay(true);
             }
         }
 
@@ -433,7 +593,7 @@ define_class!(
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
-                refresh_all_picker_windows();
+                self.setNeedsDisplay(true);
             } else if key_code == 34 {
                 // I key - Zoom in or increase captured pixels
                 // Touche I - Zoom avant ou augmente les pixels capturés
@@ -452,7 +612,7 @@ define_class!(
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
-                refresh_all_picker_windows();
+                self.setNeedsDisplay(true);
             } else if key_code == 31 {
                 // O key - Zoom out or decrease captured pixels
                 // Touche O - Zoom arrière ou diminue les pixels capturés
@@ -471,7 +631,7 @@ define_class!(
                 }
                 // Request a refresh to update the display
                 // Demande un rafraîchissement pour mettre à jour l'affichage
-                refresh_all_picker_windows();
+                self.setNeedsDisplay(true);
             } else {
                 // Arrow key codes: left=123, right=124, down=125, up=126
                 let (dx, dy): (f64, f64) = match key_code {
@@ -487,9 +647,14 @@ define_class!(
                     // Move the cursor and update the state
                     if let Ok(state) = MOUSE_STATE.lock() {
                         if let Some(ref info) = *state {
+                            // Copie les valeurs nécessaires AVANT de libérer le lock
+                            // Copy needed values BEFORE releasing the lock
+                            let old_screen_x = info.screen_x;
+                            let old_screen_y = info.screen_y;
+                            
                             // Calculate the new position (in points)
-                            let new_x = info.screen_x + dx;
-                            let new_y = info.screen_y + dy;
+                            let new_x = old_screen_x + dx;
+                            let new_y = old_screen_y + dy;
 
                             // Récupère le facteur d'échelle de l'écran à la NOUVELLE position
                             // Get scale factor of the screen at the NEW position
@@ -507,9 +672,17 @@ define_class!(
                             let capture_size = captured_pixels / scale_factor;
 
                             // Récupère la hauteur de l'écran principal pour la conversion Y
+                            // CGEvent utilise des coordonnées globales basées sur l'écran principal (screens[0])
                             // Get main screen height for Y conversion
+                            // CGEvent uses global coordinates based on main screen (screens[0])
                             let screen_height_points = if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
-                                if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                                let screens = NSScreen::screens(mtm);
+                                if screens.count() > 0 {
+                                    unsafe {
+                                        let main_screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: 0usize];
+                                        main_screen.frame().size.height
+                                    }
+                                } else if let Some(main_screen) = NSScreen::mainScreen(mtm) {
                                     main_screen.frame().size.height
                                 } else {
                                     let main_display = CGDisplay::main();
@@ -578,8 +751,11 @@ define_class!(
                                     }
                                 }
 
-                                // Request a refresh
-                                refresh_all_picker_windows();
+                                // CORRECTION CLIGNOTEMENT : Utilise un refresh intelligent
+                                // FLICKER FIX: Use smart refresh
+                                // Ne rafraîchit que les fenêtres affectées (ancienne et nouvelle position)
+                                // Only refresh affected windows (old and new position)
+                                refresh_picker_windows_smart(old_screen_x, old_screen_y, new_x, new_y);
                             }
                         }
                     }
@@ -687,126 +863,6 @@ static CONTINUE_MODE: Mutex<bool> = Mutex::new(false);
 // ColorPickerResult est maintenant défini dans common.rs
 // ColorPickerResult is now defined in common.rs
 
-// =============================================================================
-// FONCTIONS UTILITAIRES
-// UTILITY FUNCTIONS
-// =============================================================================
-
-/// Rafraîchit toutes les fenêtres overlay du picker
-/// Refresh all overlay windows of the picker
-/// 
-/// Cette fonction est nécessaire car en multi-écrans, chaque écran a sa propre
-/// fenêtre overlay. Quand le curseur passe d'un écran à l'autre, il faut
-/// rafraîchir TOUTES les fenêtres pour éviter les images rémanentes.
-///
-/// This function is necessary because in multi-screen setups, each screen has its own
-/// overlay window. When the cursor moves from one screen to another, ALL windows
-/// must be refreshed to avoid ghost images.
-fn refresh_all_picker_windows() {
-    // Récupère le marqueur de thread principal
-    // Get main thread marker
-    let Some(mtm) = MainThreadMarker::new() else {
-        return;
-    };
-    
-    // Récupère l'application partagée
-    // Get shared application
-    let app = NSApplication::sharedApplication(mtm);
-    
-    // Récupère toutes les fenêtres de l'application
-    // Get all application windows
-    let windows = app.windows();
-    let count = windows.count();
-    
-    // Parcourt toutes les fenêtres
-    // Iterate through all windows
-    for i in 0..count {
-        unsafe {
-            let window: Retained<NSWindow2> = msg_send![&*windows, objectAtIndex: i];
-            
-            // Vérifie si c'est une fenêtre overlay (level = 1000)
-            // Check if it's an overlay window (level = 1000)
-            if window.level() == 1000 {
-                // Récupère la content view et demande un rafraîchissement
-                // Get content view and request refresh
-                if let Some(content_view) = window.contentView() {
-                    content_view.setNeedsDisplay(true);
-                }
-            }
-        }
-    }
-}
-
-// =============================================================================
-// FONCTIONS UTILITAIRES MULTI-ÉCRANS
-// MULTI-SCREEN UTILITY FUNCTIONS
-// =============================================================================
-
-/// Récupère le facteur d'échelle de l'écran à la position donnée
-/// Gets the scale factor of the screen at the given position
-///
-/// # Arguments
-/// * `screen_x` - Coordonnée X en coordonnées Cocoa globales
-/// * `screen_y` - Coordonnée Y en coordonnées Cocoa globales
-///
-/// # Returns
-/// * `f64` - Le facteur d'échelle (2.0 pour Retina, 1.0 sinon)
-fn get_scale_factor_at_position(screen_x: f64, screen_y: f64) -> f64 {
-    // Récupère le marqueur de thread principal
-    // Get main thread marker
-    let Some(mtm) = MainThreadMarker::new() else {
-        return 2.0; // Default Retina
-    };
-    
-    // Récupère la liste des écrans
-    // Get list of screens
-    let screens = NSScreen::screens(mtm);
-    let count = screens.count();
-    
-    // Debug: affiche les infos de tous les écrans
-    // Debug: print info for all screens
-    println!("get_scale_factor_at_position({:.1}, {:.1}) - {} screens:", screen_x, screen_y, count);
-    
-    // Parcourt tous les écrans pour trouver celui qui contient le point
-    // Iterate through all screens to find the one containing the point
-    for i in 0..count {
-        unsafe {
-            let screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: i];
-            let frame = screen.frame();
-            let scale = screen.backingScaleFactor();
-            
-            // Debug: affiche les infos de l'écran
-            // Debug: print screen info
-            println!("  Screen {}: frame=({:.1}, {:.1}, {:.1}x{:.1}), scale={:.1}", 
-                     i, frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, scale);
-            
-            // Vérifie si le point est dans cet écran
-            // Check if point is in this screen
-            // Note: En Cocoa, frame.origin est le coin inférieur gauche
-            // In Cocoa, frame.origin is the bottom-left corner
-            // Utilise <= pour le bord supérieur et droit pour inclure les pixels de bordure
-            // Use <= for top and right edges to include border pixels
-            if screen_x >= frame.origin.x 
-                && screen_x <= frame.origin.x + frame.size.width
-                && screen_y >= frame.origin.y 
-                && screen_y <= frame.origin.y + frame.size.height 
-            {
-                println!("  -> Found in screen {}, scale={:.1}", i, scale);
-                return scale;
-            }
-        }
-    }
-    
-    // Fallback: retourne le facteur de l'écran principal
-    // Fallback: return main screen factor
-    println!("  -> Not found, using main screen");
-    if let Some(main_screen) = NSScreen::mainScreen(mtm) {
-        return main_screen.backingScaleFactor();
-    }
-    
-    2.0 // Default Retina
-}
-
 /// Structure contenant toutes les informations sur la position et la couleur actuelles
 /// Structure containing all information about current position and color
 struct MouseColorInfo {
@@ -826,90 +882,116 @@ struct MouseColorInfo {
 // =============================================================================
 
 /// Capture une zone carrée de pixels autour des coordonnées données
-/// Fonctionne correctement en multi-écrans en utilisant CGWindowListCreateImage
+/// Captures a square area of pixels around the given coordinates
 ///
 /// # Arguments
-/// * `x` - Coordonnée X du centre (coordonnées Cocoa en points, origine en bas à gauche de l'écran principal)
+/// * `x` - Coordonnée X du centre (coordonnées Cocoa en points, origine en bas à gauche)
+///        X coordinate of the center (Cocoa coordinates in points, origin at bottom-left)
 /// * `y` - Coordonnée Y du centre (coordonnées Cocoa en points)
+///        Y coordinate of the center (Cocoa coordinates in points)
 /// * `size` - Taille du carré à capturer (en points)
+///           Size of the square to capture (in points)
 ///
-/// # Retourne
+/// # Retourne / Returns
 /// * `Some(CGImage)` - L'image capturée si la capture a réussi
-/// * `None` - Si la capture a échoué
+///                    The captured image if capture succeeded
+/// * `None` - Si la capture a échoué / If capture failed
 fn capture_zoom_area(x: f64, y: f64, size: f64) -> Option<CGImage> {
     // Importe les types géométriques de Core Graphics
     // Import Core Graphics geometry types
     use core_graphics::geometry::{CGRect, CGPoint as CGPointStruct, CGSize};
-    use core_graphics::window::{kCGWindowListOptionOnScreenOnly, kCGNullWindowID};
 
-    // =========================================================================
-    // SYSTÈME DE COORDONNÉES MULTI-ÉCRANS
-    // MULTI-SCREEN COORDINATE SYSTEM
-    // =========================================================================
-    //
-    // Dans macOS, NSScreen::screens()[0] est TOUJOURS l'écran avec la barre de menu
-    // (l'écran "principal" dans les préférences système).
-    // Son frame.origin est TOUJOURS (0, 0) et définit l'origine du système de coordonnées.
-    //
-    // In macOS, NSScreen::screens()[0] is ALWAYS the screen with the menu bar
-    // (the "main" screen in system preferences).
-    // Its frame.origin is ALWAYS (0, 0) and defines the coordinate system origin.
-    //
-    // Cocoa: origine (0,0) en BAS à gauche de l'écran principal, Y vers le HAUT
-    // CG: origine (0,0) en HAUT à gauche de l'écran principal, Y vers le BAS
-    //
-    // Cocoa: origin (0,0) at BOTTOM-left of main screen, Y goes UP
-    // CG: origin (0,0) at TOP-left of main screen, Y goes DOWN
-    // =========================================================================
-
-    // Récupère la hauteur de l'écran principal (screens[0]) qui définit l'origine
-    // Get height of main screen (screens[0]) which defines the origin
-    let main_screen_height = if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
-        let screens = NSScreen::screens(mtm);
-        if screens.count() > 0 {
-            unsafe {
-                let main_screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: 0usize];
-                main_screen.frame().size.height
+    // CORRECTION MULTI-ÉCRAN : Trouve l'écran qui contient les coordonnées données
+    // MULTI-SCREEN FIX: Find the screen that contains the given coordinates
+    let mtm = objc2_foundation::MainThreadMarker::new()?;
+    let screens = NSScreen::screens(mtm);
+    let count = screens.count();
+    
+    // Variables pour stocker les informations de l'écran trouvé
+    // Variables to store the found screen information
+    let mut target_screen_frame: Option<NSRect> = None;
+    let mut target_display_id: Option<u32> = None;
+    
+    // Parcourt tous les écrans pour trouver celui qui contient le point
+    // Iterate through all screens to find the one containing the point
+    for i in 0..count {
+        unsafe {
+            let screen: Retained<NSScreen> = msg_send![&*screens, objectAtIndex: i];
+            let frame = screen.frame();
+            
+            // Vérifie si le point (x, y) est dans ce cadre d'écran
+            // Check if point (x, y) is within this screen frame
+            if x >= frame.origin.x 
+                && x <= frame.origin.x + frame.size.width
+                && y >= frame.origin.y 
+                && y <= frame.origin.y + frame.size.height 
+            {
+                target_screen_frame = Some(frame);
+                
+                // Récupère l'ID du display Core Graphics pour cet écran
+                // Get the Core Graphics display ID for this screen
+                // deviceDescription contient un dictionnaire avec l'ID du display
+                // deviceDescription contains a dictionary with the display ID
+                let device_desc = screen.deviceDescription();
+                let ns_screen_number_key = NSString::from_str("NSScreenNumber");
+                if let Some(screen_number) = device_desc.objectForKey(&ns_screen_number_key) {
+                    // NSNumber vers u32 via msg_send (dé-référence avec &*)
+                    // NSNumber to u32 via msg_send (dereference with &*)
+                    let display_id: u32 = msg_send![&*screen_number, unsignedIntValue];
+                    target_display_id = Some(display_id);
+                }
+                break;
             }
-        } else {
-            // Fallback
-            let main_display = CGDisplay::main();
-            main_display.pixels_high() as f64 / 2.0
         }
+    }
+    
+    // Si on n'a pas trouvé d'écran contenant le point, utilise l'écran principal en fallback
+    // If no screen was found containing the point, use main screen as fallback
+    let (screen_frame, display) = if let (Some(frame), Some(display_id)) = (target_screen_frame, target_display_id) {
+        (frame, CGDisplay::new(display_id))
     } else {
-        let main_display = CGDisplay::main();
-        main_display.pixels_high() as f64 / 2.0
+        // Fallback vers l'écran principal
+        // Fallback to main screen
+        let main_screen = NSScreen::mainScreen(mtm)?;
+        let frame = main_screen.frame();
+        (frame, CGDisplay::main())
     };
+    
+    // Hauteur de l'écran trouvé en points (pour conversion de coordonnées)
+    // Height of the found screen in points (for coordinate conversion)
+    let screen_height_points = screen_frame.size.height;
+    
+    // Convertit les coordonnées globales Cocoa vers les coordonnées locales de l'écran
+    // Convert global Cocoa coordinates to local screen coordinates
+    // En Cocoa : origine en bas à gauche, coordonnées globales
+    // In Cocoa: origin at bottom-left, global coordinates
+    // En CG : origine en haut à gauche, coordonnées locales à l'écran
+    // In CG: origin at top-left, local to screen
+    
+    // Coordonnée X locale à l'écran (relatif à l'origine de l'écran)
+    // Local X coordinate to the screen (relative to screen origin)
+    let local_x = x - screen_frame.origin.x;
+    
+    // Coordonnée Y locale, convertie de Cocoa (bas) vers CG (haut)
+    // Local Y coordinate, converted from Cocoa (bottom) to CG (top)
+    let local_y_cocoa = y - screen_frame.origin.y;
+    let local_y_cg = screen_height_points - local_y_cocoa;
 
-    // Conversion Cocoa -> CG
-    // cg_y = main_screen_height - cocoa_y
-    let cg_x = x;
-    let cg_y = main_screen_height - y;
+    // La taille de capture en points
+    // Capture size in points
+    let capture_size = size;
+    let half_size = capture_size / 2.0;
 
-    // Taille de capture
-    // Capture size
-    let half_size = size / 2.0;
-
-    // Rectangle de capture centré sur le point
-    // Capture rectangle centered on the point
+    // Crée le rectangle de capture centré sur le point (coordonnées locales CG)
+    // Create capture rectangle centered on the point (local CG coordinates)
     let rect = CGRect::new(
-        &CGPointStruct::new(cg_x - half_size, cg_y - half_size),
-        &CGSize::new(size, size)
+        &CGPointStruct::new(local_x - half_size, local_y_cg - half_size),
+        &CGSize::new(capture_size, capture_size)
     );
 
-    // Debug: affiche les coordonnées et la taille
-    // Debug: print coordinates and size
-    println!("capture_zoom_area: Cocoa({:.1}, {:.1}) -> CG({:.1}, {:.1}), main_h={:.1}, size={:.1}", 
-             x, y, cg_x, cg_y, main_screen_height, size);
-
-    // Capture via CGWindowListCreateImage (tous les écrans)
-    // Capture via CGWindowListCreateImage (all screens)
-    CGDisplay::screenshot(
-        rect,
-        kCGWindowListOptionOnScreenOnly,
-        kCGNullWindowID,
-        0  // kCGWindowImageDefault
-    )
+    // Capture l'image dans le rectangle spécifié sur l'écran correct
+    // Capture the image in the specified rectangle on the correct screen
+    display.image_for_rect(rect)
 }
 
 /// Extrait la couleur du pixel central d'une image CGImage
@@ -1181,6 +1263,19 @@ pub fn run(fg: bool) -> ColorPickerResult {
             window_as_nswindow.setHasShadow(false);                   // No shadow
             window_as_nswindow.setIgnoresMouseEvents(false);          // Receives mouse events
             window_as_nswindow.setAcceptsMouseMovedEvents(true);      // Receives mouseMoved
+            
+            // CORRECTION DOUBLE-CLIC : Configure la fenêtre pour accepter le premier clic
+            // DOUBLE-CLICK FIX: Configure window to accept first mouse click
+            // Sans cette configuration, le premier clic active simplement la fenêtre,
+            // et un second clic est nécessaire pour déclencher l'action
+            // Without this, the first click just activates the window,
+            // and a second click is needed to trigger the action
+            // Note: setAcceptsFirstMouse n'est pas disponible via objc2-app-kit,
+            //       mais makeKeyAndOrderFront + hidesOnDeactivate règle le problème
+            // Note: setAcceptsFirstMouse is not available via objc2-app-kit,
+            //       but makeKeyAndOrderFront + hidesOnDeactivate solves the issue
+            window_as_nswindow.setHidesOnDeactivate(false);           // Ne se cache pas quand désactivée
+            
             // Disable window content sharing (prevents screen capture of this window)
             // NSWindowSharingType: 0 = None, 1 = ReadOnly, 2 = ReadWrite
             window_as_nswindow.setSharingType(NSWindowSharingType(0));
@@ -1201,6 +1296,20 @@ pub fn run(fg: bool) -> ColorPickerResult {
             // Cast ColorPickerView to NSView for setContentView and makeFirstResponder
             // ColorPickerView inherits from NSView so this cast is safe
             let view_as_nsview: &NSView = &view; // Deref coercion to parent class
+
+            // CORRECTION CLIGNOTEMENT : Active le layer-backing pour un rendu fluide
+            // FLICKER FIX: Enable layer-backing for smooth rendering
+            // Le layer-backing utilise Core Animation pour un double-buffering automatique
+            // Layer-backing uses Core Animation for automatic double-buffering
+            view_as_nsview.setWantsLayer(true);
+            
+            // La vue est opaque (pas de transparence dans la vue elle-même)
+            // The view is opaque (no transparency in the view itself)
+            // Cela permet à AppKit d'optimiser le rendu
+            // This allows AppKit to optimize rendering
+            // Note: L'overlay semi-transparent est dessiné DANS la vue, la vue elle-même est opaque
+            // Note: The semi-transparent overlay is drawn INSIDE the view, the view itself is opaque
+            let _: () = msg_send![view_as_nsview, setOpaque: Bool::YES];
 
             // Configure la fenêtre avec la vue
             // Configure the window with the view
@@ -1235,23 +1344,25 @@ pub fn run(fg: bool) -> ColorPickerResult {
                 // with origin at top-left
                 let cg_point = event.location();
                 
-                // Récupère la hauteur en points de l'écran principal
-                // Get main screen height in points
+                // Récupère le scale factor et la hauteur en points
+                // Get the scale factor and height in points
+                let scale_factor = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
+                    main_screen.backingScaleFactor()
+                } else {
+                    2.0 // Default to Retina
+                };
+                
                 let screen_height_points = if let Some(main_screen) = NSScreen::mainScreen(mtm) {
                     main_screen.frame().size.height
                 } else {
                     let main_display = CGDisplay::main();
-                    main_display.pixels_high() as f64 / 2.0
+                    main_display.pixels_high() as f64 / scale_factor
                 };
                 
                 // Convertit CG (origine en haut) vers Cocoa (origine en bas)
                 // Convert CG (origin at top) to Cocoa (origin at bottom)
                 let cocoa_x = cg_point.x;
                 let cocoa_y = screen_height_points - cg_point.y;
-                
-                // Récupère le facteur d'échelle de l'écran à la position du curseur
-                // Get scale factor of the screen at cursor position
-                let scale_factor = get_scale_factor_at_position(cocoa_x, cocoa_y);
                 
                 // Récupère le nombre de pixels capturés pour la taille de capture
                 // Get captured pixels count for capture size
@@ -1396,31 +1507,33 @@ fn draw_view(view: &NSView) {
 
     // -------------------------------------------------------------------------
     // Dessine la loupe si on a des informations sur la souris
+    // Draw the magnifier if we have mouse information
     // -------------------------------------------------------------------------
     if let Ok(state) = MOUSE_STATE.lock() {
         if let Some(ref info) = *state {
-            // Vérifie si le curseur est sur l'écran de cette vue
-            // Check if cursor is on this view's screen
-            // On compare les coordonnées du curseur avec le frame de la fenêtre de cette vue
-            // Compare cursor coordinates with this view's window frame
-            let cursor_on_this_screen = if let Some(window) = view.window() {
-                let window_frame = window.frame();
-                // Vérifie si les coordonnées écran du curseur sont dans le frame de cette fenêtre
-                // Check if cursor screen coordinates are within this window's frame
-                info.screen_x >= window_frame.origin.x
-                    && info.screen_x <= window_frame.origin.x + window_frame.size.width
-                    && info.screen_y >= window_frame.origin.y
-                    && info.screen_y <= window_frame.origin.y + window_frame.size.height
+            // CORRECTION MULTI-ÉCRAN : Vérifie si le curseur est dans l'écran de cette fenêtre
+            // MULTI-SCREEN FIX: Check if cursor is in this window's screen
+            let should_draw_magnifier = if let Some(window) = view.window() {
+                if let Some(screen) = window.screen() {
+                    let screen_frame = screen.frame();
+                    // Vérifie si la position du curseur est dans ce cadre d'écran
+                    // Check if cursor position is within this screen frame
+                    info.screen_x >= screen_frame.origin.x
+                        && info.screen_x <= screen_frame.origin.x + screen_frame.size.width
+                        && info.screen_y >= screen_frame.origin.y
+                        && info.screen_y <= screen_frame.origin.y + screen_frame.size.height
+                } else {
+                    true // Fallback: dessine si on ne peut pas déterminer l'écran
+                         // Fallback: draw if we can't determine the screen
+                }
             } else {
-                false
+                true // Fallback: dessine si on ne peut pas obtenir la fenêtre
+                     // Fallback: draw if we can't get the window
             };
 
-            // Ne dessine la loupe que si le curseur est sur cet écran
-            // Only draw magnifier if cursor is on this screen
-            if !cursor_on_this_screen {
-                return;
-            }
-
+            // Ne dessine la loupe que si le curseur est dans cet écran
+            // Only draw magnifier if cursor is in this screen
+            if should_draw_magnifier {
             // Récupère le zoom actuel
             let current_zoom = match CURRENT_ZOOM.lock() {
                 Ok(z) => *z,
@@ -1437,13 +1550,8 @@ fn draw_view(view: &NSView) {
             // Calcule la taille de la loupe à afficher
             // mag_size = nombre de pixels capturés × facteur de zoom
             let mag_size = captured_pixels * current_zoom;
-            
-            // Récupère le facteur d'échelle de l'écran à la position actuelle du curseur
-            // Get scale factor of the screen at current cursor position
-            let current_scale_factor = get_scale_factor_at_position(info.screen_x, info.screen_y);
-            
             // Taille de capture ajustée pour le facteur d'échelle Retina
-            let capture_size = captured_pixels / current_scale_factor;
+            let capture_size = captured_pixels / info.scale_factor;
 
             // Capture la zone de pixels autour du curseur
             if let Some(cg_image) = capture_zoom_area(info.screen_x, info.screen_y, capture_size) {
@@ -1826,9 +1934,10 @@ fn draw_view(view: &NSView) {
                         &text_color,
                         is_continue_mode, // Badge C si mode continue activé
                     );
-                }
-            }
-        }
+                } // Fin du bloc unsafe / End of unsafe block
+            } // Fin du if let Some(cg_image) / End of if let Some(cg_image)
+            } // Fin du if should_draw_magnifier / End of if should_draw_magnifier
+        } // Fin du if let Some(ref info) / End of if let Some(ref info)
     }
 }
 
