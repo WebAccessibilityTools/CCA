@@ -14,7 +14,7 @@
     "windows": [
       {
         "title": "Colour Contrast Analyser",
-        "width": 600,
+        "width": 400,
         "height": 500,
         "resizable": true,
         "center": true

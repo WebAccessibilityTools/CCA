@@ -19,6 +19,9 @@ import Alpine from 'alpinejs';
 // Import store and interfaces from store.ts
 import { UIStore, BackendStore } from './store';
 
+// Import Webcomponents
+import './components/ProgressBar';
+
 // =============================================================================
 // CONFIGURATION DU STORE ALPINE.JS
 // ALPINE.JS STORE CONFIGURATION

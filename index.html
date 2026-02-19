@@ -13,107 +13,110 @@
       <h1 class="sr-only">Colour Contrast Analyser</h1>
       <div class="colors">
         <!-- Foreground Color -->
-        <section>
-          <div>
-            <div
-              class="color-preview"
-              x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
-              x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
-            >
-              <h2>Foreground</h2>
-              <button
-                class="pick-btn"
-                @click="$store.uiStore.pickColor(true)"
-                x-bind:disabled="$store.uiStore.isPicking"
-              >
-              <span class="sr-only" x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick foreground Colour'">Pick foreground Colour</span>
-              <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px" fill="#ffffff"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="color-info">
+        <section id="foreground">
+          <div
+            class="color-preview foreground"
+            x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
+            x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
+          >
+            <h2>Foreground</h2>
             <p
               class="hex-value"
               x-text="$store.uiStore.foregroundHex"
             ></p>
+            <button
+              class="btn"
+              @click="$store.uiStore.pickColor(true)"
+              x-bind:disabled="$store.uiStore.isPicking"
+              aria-label="Pick foreground Colour"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair-icon lucide-crosshair"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>
+            </button>
+          </div>
+          <!--div class="color-info">
             <p>
               <strong>RGB:</strong>
               <span x-text="$store.uiStore.foregroundRgb"></span>
             </p>
-          </div>
+          </div-->
         </section>
-
-        <!-- Background Color -->
-        <section>
-          <div>
-            <div
-              class="color-preview"
-              x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
-              x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
+          <div class="buttons"><button
+              class="btn"
+              @click="$store.uiStore.pickColor(false)"
+              x-bind:disabled="$store.uiStore.isPicking"
+              aria-label="Pick background Colour"
             >
-              <h2>Background</h2>
-              <button
-                class="pick-btn"
-                @click="$store.uiStore.pickColor(false)"
-                x-bind:disabled="$store.uiStore.isPicking"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px" fill="#ffffff"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
-                <span class="sr-only" x-text="$store.uiStore.isPicking ? 'Picking...' : 'Pick background colour'">Pick background Colour</span>
-              </button>
-            </div>
-          </div>
-          <div class="color-info">
+            </button></div>
+        <!-- Background Color -->
+        <section id="background">
+          <div
+            class="color-preview background"
+            x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
+            x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
+          >
+            <h2>Background</h2>
             <p
               class="hex-value"
               x-text="$store.uiStore.backgroundHex"
             ></p>
+            <button
+              class="btn"
+              @click="$store.uiStore.pickColor(false)"
+              x-bind:disabled="$store.uiStore.isPicking"
+              aria-label="Pick background Colour"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
+            </button>
+          </div>
+          <!--div class="color-info">
             <p>
               <strong>RGB:</strong>
               <span x-text="$store.uiStore.backgroundRgb"></span>
             </p>
-          </div>
+          </div-->
         </section>
       </div>
       <!-- Contrast Ratio -->
-      <section class="contrast-ratio">
-        <p>
+      <section class="results">
+        <p class="contrast-ratio">
           <strong>Contrast Ratio:</strong>
-          <span x-text="$store.uiStore.contrastRatio">xxx:1</span>
+          <span><span x-text="$store.uiStore.contrastRatio"></span>:1</span>
         </p>
-        <p>
-          <strong>1.4.3 Regular:</strong>
-          <span x-show="$store.uiStore.level143Regular">PASS</span>
+        <p class="progress">
+          <span>Regular</span>
           <span x-show="!$store.uiStore.level143Regular">FAIL</span>
+          <span x-show="$store.uiStore.level143Regular && !$store.uiStore.level146Regular">PASS<span class="sr-only">AA</span></span>
+          <span x-show="$store.uiStore.level146Regular">PASS<span class="sr-only">AAA</span></span>
+
+          <!-- 1.4.3 Regular text 4.5 AA - 7 AAA -->
+          <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="21.43" split2="33.33"></progress-bar>
         </p>
-        <p>
-          <strong>1.4.3 Large:</strong>
-          <span x-show="$store.uiStore.level143Large">PASS</span>
+        <p class="progress">
+          <span>Large</span>
           <span x-show="!$store.uiStore.level143Large">FAIL</span>
+          <span x-show="$store.uiStore.level143Large && !$store.uiStore.level146Large">PASS<span class="sr-only">AA</span></span>
+          <span x-show="$store.uiStore.level146Large">PASS<span class="sr-only">AAA</span></span>
+
+          <!-- 1.4.6 Large text 3.1 AA - 4.5 AAA -->
+          <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="14.28" split2="21.43"></progress-bar>
         </p>
-        <p>
-          <strong>1.4.6 Regular:</strong>
-          <span x-show="$store.uiStore.level146Regular">PASS</span>
-          <span x-show="!$store.uiStore.level146Regular">FAIL</span>
-        </p>
-        <p>
-          <strong>1.4.6 Large:</strong>
-          <span x-show="$store.uiStore.level146Large">PASS</span>
-          <span x-show="!$store.uiStore.level146Large">FAIL</span>
-        </p>
-        <p>
-          <strong>1.4.11:</strong>
-          <span x-show="$store.uiStore.level1411">PASS</span>
+        <p class="progress">
+          <span>Non-text</span>
           <span x-show="!$store.uiStore.level1411">FAIL</span>
+          <span x-show="$store.uiStore.level1411">PASS</span>
+
+          <!-- 1.4.11 Non-text 3.1 AA -->
+          <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="14.28"></progress-bar>
         </p>
       </section>
 
       <!-- ICC Profile Status (debug/info) -->
-      <section class="icc-status" x-show="$store.uiStore.platform === 'macos'">
+      <!--section class="icc-status box" x-show="$store.uiStore.platform === 'macos'">
         <p>
           <strong>Colour Profile:</strong>
           <span x-text="$store.uiStore.currentICCProfile"></span>
         </p>
-      </section>
+      </section-->
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
