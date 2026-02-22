@@ -18,6 +18,9 @@
   --color-950: oklch(0.14 0.00 286);
 
   --button-border-size: 2px;
+
+  --color-red-700: oklch(50.5% 0.213 27.518);
+  --color-green-700: oklch(53.2% 0.157 131.589);
 }
 
 /* -----------------------------------------------------------------------------
@@ -95,35 +98,46 @@ strong {
    ----------------------------------------------------------------------------- */
 
 .colors {
-  position: relative;
-   /* Visual color preview */
+  /* Visual color preview */
   .color-preview {
     forced-color-adjust: none;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    width: 100%;
     padding: 1rem;
     color: #000000;
     position: relative;
     &.foreground {
-      border-radius: 0 2rem 2rem 0;
+      border-bottom-left-radius: 2rem;
       h2 {
-        left: 2px;
+        left: 0.5rem;
+        top: 0.5rem
+      }
+      .btn {
+        right: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
       }
     }
     &.background {
-      flex-direction: row-reverse;
-      border-radius: 2rem 0 0 2rem;
+      border-top-right-radius: 2rem;
       h2 {
-        right: 2px;
+        right: 0.5rem;
+        bottom: 0.5rem;
+      }
+      .btn {
+        left: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
       }
     }
     h2 {
       font-weight: normal;
       font-size: 0.8rem;
       position: absolute;
-      top: 0;
+    }
+    .btn {
+      position: absolute;
     }
     &.isDark {
       color: #ffffff;
@@ -132,18 +146,18 @@ strong {
       display: flex;
       justify-content: center;
       width: 100%;
+      padding: 1rem;
     }
   }
 
   .buttons {
-    text-align: center;
+    display: flex;
+    justify-content: center;
     height: 0;
     .btn {
       position: relative;
       z-index: 99;
-      left: 50%;
-      top: -20px;
-    background: url('lucide-static/icons/crosshair.svg') no-repeat 50% 50%;
+      transform: translateY(-50%);
     }
   }
 }
@@ -157,7 +171,30 @@ strong {
   }
 
   .progress {
-    padding: 1rem 1rem 0 1rem;
+    .icon {
+      position: absolute;
+      svg.non-active {
+        opacity: 0.2;
+        position: relative;
+        left: -1.2rem
+      }
+    }
+    .label {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1rem;
+      align-items: center;
+      .pass {
+        font-weight: bold;
+        color: var(--color-green-700);
+      }
+      .fail {
+        font-weight: bold;
+        color: var(--color-red-700);
+      }
+    }
+    padding: 0 1rem 0 1rem;
   }
 }
 /* -----------------------------------------------------------------------------

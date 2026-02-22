@@ -13,68 +13,74 @@
       <h1 class="sr-only">Colour Contrast Analyser</h1>
       <div class="colors">
         <!-- Foreground Color -->
-        <section id="foreground">
-          <div
-            class="color-preview foreground"
-            x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
-            x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
-          >
-            <h2>Foreground</h2>
-            <p
-              class="hex-value"
-              x-text="$store.uiStore.foregroundHex"
-            ></p>
-            <button
-              class="btn"
-              @click="$store.uiStore.pickColor(true)"
-              x-bind:disabled="$store.uiStore.isPicking"
-              aria-label="Pick foreground Colour"
+        <div class="wrapper" x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`">
+          <section id="foreground">
+            <div
+              class="color-preview foreground"
+              x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
+              x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair-icon lucide-crosshair"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>
-            </button>
-          </div>
-          <!--div class="color-info">
-            <p>
-              <strong>RGB:</strong>
-              <span x-text="$store.uiStore.foregroundRgb"></span>
-            </p>
-          </div-->
-        </section>
+              <h2>Foreground</h2>
+              <p
+                class="hex-value"
+                x-text="$store.uiStore.foregroundHex"
+              ></p>
+              <button
+                class="btn"
+                @click="$store.uiStore.pickColor(true)"
+                x-bind:disabled="$store.uiStore.isPicking"
+                aria-label="Pick foreground Colour"
+              >
+                <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M405.6 93.2L304 194.8L294.6 185.4C282.1 172.9 261.8 172.9 249.3 185.4C236.8 197.9 236.8 218.2 249.3 230.7L409.3 390.7C421.8 403.2 442.1 403.2 454.6 390.7C467.1 378.2 467.1 357.9 454.6 345.4L445.2 336L546.8 234.4C585.8 195.4 585.8 132.2 546.8 93.3C507.8 54.4 444.6 54.3 405.7 93.3zM119.4 387.3C104.4 402.3 96 422.7 96 443.9L96 486.3L69.4 526.2C60.9 538.9 62.6 555.8 73.4 566.6C84.2 577.4 101.1 579.1 113.8 570.6L153.7 544L196.1 544C217.3 544 237.7 535.6 252.7 520.6L362.1 411.2L316.8 365.9L207.4 475.3C204.4 478.3 200.3 480 196.1 480L160 480L160 443.9C160 439.7 161.7 435.6 164.7 432.6L274.1 323.2L228.8 277.9L119.4 387.3z"/></svg>
+              </button>
+            </div>
+            <!--div class="color-info">
+              <p>
+                <strong>RGB:</strong>
+                <span x-text="$store.uiStore.foregroundRgb"></span>
+              </p>
+            </div-->
+          </section>
+        </div>
           <div class="buttons"><button
               class="btn"
               @click="$store.uiStore.pickColor(false)"
               x-bind:disabled="$store.uiStore.isPicking"
               aria-label="Pick background Colour"
             >
+            <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Pro v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M329.4 169.4L425.4 73.4C437.9 60.9 458.2 60.9 470.7 73.4L566.7 169.4C579.2 181.9 579.2 202.2 566.7 214.7C554.2 227.2 533.9 227.2 521.4 214.7L480 173.3L480 288L544 288C561.7 288 576 302.3 576 320C576 337.7 561.7 352 544 352L224 352L224 466.7L265.4 425.3C277.9 412.8 298.2 412.8 310.7 425.3C323.2 437.8 323.2 458.1 310.7 470.6L214.7 566.6C202.2 579.1 181.9 579.1 169.4 566.6L73.4 470.6C60.9 458.1 60.9 437.8 73.4 425.3C85.9 412.8 106.2 412.8 118.7 425.3L160 466.7L160 352L96 352C78.3 352 64 337.7 64 320C64 302.3 78.3 288 96 288L416 288L416 173.3L374.6 214.7C362.1 227.2 341.8 227.2 329.3 214.7C316.8 202.2 316.8 181.9 329.3 169.4zM480 400L480 544C480 561.7 465.7 576 448 576C430.3 576 416 561.7 416 544L416 400L480 400zM160 240L160 96C160 78.3 174.3 64 192 64C209.7 64 224 78.3 224 96L224 240L160 240z"/></svg>
             </button></div>
         <!-- Background Color -->
-        <section id="background">
-          <div
-            class="color-preview background"
-            x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
-            x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
-          >
-            <h2>Background</h2>
-            <p
-              class="hex-value"
-              x-text="$store.uiStore.backgroundHex"
-            ></p>
-            <button
-              class="btn"
-              @click="$store.uiStore.pickColor(false)"
-              x-bind:disabled="$store.uiStore.isPicking"
-              aria-label="Pick background Colour"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M15.896 9.023l-.92-.92L17.67 5.41l.92.92z" opacity=".3"/><path d="M20.71 5.63l-2.34-2.34c-.2-.2-.45-.29-.71-.29s-.51.1-.7.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19zm8.98-9.97l-.93-.93 2.69-2.69.92.92-2.68 2.7z"/></svg>
-            </button>
-          </div>
-          <!--div class="color-info">
-            <p>
-              <strong>RGB:</strong>
-              <span x-text="$store.uiStore.backgroundRgb"></span>
-            </p>
-          </div-->
-        </section>
+         <div class="wrapper"
+            x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`">
+            <section id="background">
+              <div
+                class="color-preview background"
+                x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
+                x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
+              >
+                <h2>Background</h2>
+                <p
+                  class="hex-value"
+                  x-text="$store.uiStore.backgroundHex"
+                ></p>
+                <button
+                  class="btn"
+                  @click="$store.uiStore.pickColor(false)"
+                  x-bind:disabled="$store.uiStore.isPicking"
+                  aria-label="Pick background Colour"
+                >
+                  <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M405.6 93.2L304 194.8L294.6 185.4C282.1 172.9 261.8 172.9 249.3 185.4C236.8 197.9 236.8 218.2 249.3 230.7L409.3 390.7C421.8 403.2 442.1 403.2 454.6 390.7C467.1 378.2 467.1 357.9 454.6 345.4L445.2 336L546.8 234.4C585.8 195.4 585.8 132.2 546.8 93.3C507.8 54.4 444.6 54.3 405.7 93.3zM119.4 387.3C104.4 402.3 96 422.7 96 443.9L96 486.3L69.4 526.2C60.9 538.9 62.6 555.8 73.4 566.6C84.2 577.4 101.1 579.1 113.8 570.6L153.7 544L196.1 544C217.3 544 237.7 535.6 252.7 520.6L362.1 411.2L316.8 365.9L207.4 475.3C204.4 478.3 200.3 480 196.1 480L160 480L160 443.9C160 439.7 161.7 435.6 164.7 432.6L274.1 323.2L228.8 277.9L119.4 387.3z"/></svg>
+                </button>
+              </div>
+              <!--div class="color-info">
+                <p>
+                  <strong>RGB:</strong>
+                  <span x-text="$store.uiStore.backgroundRgb"></span>
+                </p>
+              </div-->
+            </section>
+         </div>
       </div>
       <!-- Contrast Ratio -->
       <section class="results">
@@ -82,32 +88,47 @@
           <strong>Contrast Ratio:</strong>
           <span><span x-text="$store.uiStore.contrastRatio"></span>:1</span>
         </p>
-        <p class="progress">
-          <span>Regular</span>
-          <span x-show="!$store.uiStore.level143Regular">FAIL</span>
-          <span x-show="$store.uiStore.level143Regular && !$store.uiStore.level146Regular">PASS<span class="sr-only">AA</span></span>
-          <span x-show="$store.uiStore.level146Regular">PASS<span class="sr-only">AAA</span></span>
+        <div class="progress">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="1.5rem" width="1.5rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+              <svg class="non-active" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2.2rem" width="2.2rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+            </span>
 
+          <p class="label">
+            <span>Regular Text</span>
+            <span class="fail" x-show="!$store.uiStore.level143Regular">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level143Regular && !$store.uiStore.level146Regular">PASS</span>
+            <span class="pass" x-show="$store.uiStore.level146Regular">PASS</span>
+          </p>
           <!-- 1.4.3 Regular text 4.5 AA - 7 AAA -->
           <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="21.43" split2="33.33"></progress-bar>
-        </p>
-        <p class="progress">
-          <span>Large</span>
-          <span x-show="!$store.uiStore.level143Large">FAIL</span>
-          <span x-show="$store.uiStore.level143Large && !$store.uiStore.level146Large">PASS<span class="sr-only">AA</span></span>
-          <span x-show="$store.uiStore.level146Large">PASS<span class="sr-only">AAA</span></span>
-
+        </div>
+        <div class="progress">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2.2rem" width="2.2rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+              <svg class="non-active" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="1.5rem" width="1.5rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+            </span>
+          <p class="label">
+            <span>Large Text</span>
+            <span class="fail" x-show="!$store.uiStore.level143Large">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level143Large && !$store.uiStore.level146Large">PASS</span>
+            <span class="pass" x-show="$store.uiStore.level146Large">PASS</span>
+          </p>
           <!-- 1.4.6 Large text 3.1 AA - 4.5 AAA -->
           <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="14.28" split2="21.43"></progress-bar>
-        </p>
-        <p class="progress">
-          <span>Non-text</span>
-          <span x-show="!$store.uiStore.level1411">FAIL</span>
-          <span x-show="$store.uiStore.level1411">PASS</span>
-
+        </div>
+        <div class="progress">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2rem" width="2rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M416 192C486.7 192 544 249.3 544 320C544 390.7 486.7 448 416 448L224 448C153.3 448 96 390.7 96 320C96 249.3 153.3 192 224 192L416 192zM608 320C608 214 522 128 416 128L224 128C118 128 32 214 32 320C32 426 118 512 224 512L416 512C522 512 608 426 608 320zM224 400C268.2 400 304 364.2 304 320C304 275.8 268.2 240 224 240C179.8 240 144 275.8 144 320C144 364.2 179.8 400 224 400z"/></svg>
+            </span>
+          <p class="label">
+            <span>Non-text</span>
+            <span class="fail" x-show="!$store.uiStore.level1411">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level1411">PASS</span>
+          </p>
           <!-- 1.4.11 Non-text 3.1 AA -->
           <progress-bar :position="$store.uiStore.contrastRatioPercent" split1="14.28"></progress-bar>
-        </p>
+        </div>
       </section>
 
       <!-- ICC Profile Status (debug/info) -->
