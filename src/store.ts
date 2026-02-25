@@ -82,8 +82,6 @@ export interface UIStore {
   // Contrast Ratio Rounded
   contrastRatio: string;
 
-  // Contrast Ratio in percentage for progress bar
-  contrastRatioPercent: string;
 
   // Profil ICC actuellement sélectionné
   // Currently selected ICC profile
@@ -147,8 +145,6 @@ export const UIStore = {
   // Initial state: Contrast ratio
   contrastRatio: '0',
 
-  // Initial state: Contrast Ratio in percentage for progress bar
-  contrastRatioPercent: '0',
 
   // État initial : profil ICC par défaut (Auto)
   // Initial state: default ICC profile (Auto)
@@ -226,7 +222,6 @@ export const UIStore = {
     this.backgroundIsDark = store.background_is_dark;
 
     this.contrastRatio = `${store.contrast_ratio_rounded}`;
-    this.contrastRatioPercent = `${store.contrast_ratio_rounded*100/21}`;
 
     // Update WCAG Level rules, based on contrast ratio
     this.level143Regular = true;

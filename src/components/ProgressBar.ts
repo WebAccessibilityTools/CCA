@@ -7,6 +7,7 @@ export class ProgressBar extends LitElement {
   @property({ type: Number }) split1 = 10;
   // We accepte Number or undefined
   @property({ type: Number }) split2?: number;
+  @property({ type: String }) labels: 'levels' | 'ratios' = 'levels';
 
   static aaColor: string = 'oklch(0.55 0.01 286)';
   static aaaColor: string = 'oklch(0.37 0.01 286)';
@@ -69,46 +70,85 @@ export class ProgressBar extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
+
+    .label-ratio {
+      position: absolute;
+      left: 0;
+      transform: translateX(-50%);
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--color-600);
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .label-ratio.above {
+      bottom: 100%;
+      margin-bottom: 4px;
+    }
+
+    .label-ratio.below {
+      top: 100%;
+      margin-top: 4px;
+    }
   `;
 
+  // Convertit une valeur sur l'échelle 0-21 en pourcentage
+  private toPercent(value: number): number {
+    return (value / 21) * 100;
+  }
+
   render() {
-    // Si split2 n'est pas défini, on considère qu'il est à 100% (fin de la barre)
-    const s2 = this.split2 ?? 100;
+    const posPercent = this.toPercent(this.position);
+    const s1Percent = this.toPercent(this.split1);
+    const s2Percent = this.split2 != null ? this.toPercent(this.split2) : 100;
 
     // Dégradé dynamique : Si pas de split2, on ne passe que du rouge au jaune/vert
-    const gradient = this.split2 
-      ? `linear-gradient(to right, 
-          ${ProgressBar.failColor} 0%, ${ProgressBar.failColor} ${this.split1}%, 
-          ${ProgressBar.aaColor} ${this.split1}%, ${ProgressBar.aaColor} ${s2}%, 
-          ${ProgressBar.aaaColor} ${s2}%, ${ProgressBar.aaaColor} 100%)`
-      : `linear-gradient(to right, 
-          ${ProgressBar.failColor} 0%, ${ProgressBar.failColor} ${this.split1}%, 
-          ${ProgressBar.aaaColor} ${this.split1}%, ${ProgressBar.aaaColor} 100%)`;
+    const gradient = this.split2 != null
+      ? `linear-gradient(to right,
+          ${ProgressBar.failColor} 0%, ${ProgressBar.failColor} ${s1Percent}%,
+          ${ProgressBar.aaColor} ${s1Percent}%, ${ProgressBar.aaColor} ${s2Percent}%,
+          ${ProgressBar.aaaColor} ${s2Percent}%, ${ProgressBar.aaaColor} 100%)`
+      : `linear-gradient(to right,
+          ${ProgressBar.failColor} 0%, ${ProgressBar.failColor} ${s1Percent}%,
+          ${ProgressBar.aaaColor} ${s1Percent}%, ${ProgressBar.aaaColor} 100%)`;
 
     return html`
-      <div class="progress-bar" style="background: ${gradient}">
-        <div class="divider" style="left: ${this.split1}%"></div>
+      <div class="progress-bar" style="background: ${gradient}" aria-hidden="true">
+        <div class="divider" style="left: ${s1Percent}%"></div>
 
-        ${this.split2 && this.split2 < 100 
-          ? html`<div class="divider" style="left: ${this.split2}%"></div>` 
+        ${this.split2 != null && s2Percent < 100
+          ? html`<div class="divider" style="left: ${s2Percent}%"></div>`
           : ''}
 
-        <div class="progress-indicator" style="left: ${this.position}%"></div>
-      </div>
+        <div class="progress-indicator" style="left: ${posPercent}%"></div>
 
-      <div class="labels-container">
-        <div class="label-item" style="width: ${this.split1}%"></div>
-
-        ${this.split2 
+        ${this.labels === 'ratios'
           ? html`
-              <div class="label-item" style="width: ${s2 - this.split1}%">AA</div>
-              <div class="label-item" style="width: ${100 - s2}%">AAA</div>
-            `
-          : html`
-              <div class="label-item" style="width: ${100 - this.split1}%">AA</div>
-            `
-        }
+            <span class="label-ratio above" style="left: ${s1Percent}%">${this.split1}</span>
+            ${this.split2 != null
+              ? html`<span class="label-ratio below" style="left: ${s2Percent}%">${this.split2}</span>`
+              : ''}
+          `
+          : ''}
       </div>
+
+      ${this.labels === 'levels'
+        ? html`
+          <div class="labels-container">
+            <div class="label-item" style="width: ${s1Percent}%"></div>
+            ${this.split2 != null
+              ? html`
+                  <div class="label-item" style="width: ${s2Percent - s1Percent}%">AA</div>
+                  <div class="label-item" style="width: ${100 - s2Percent}%">AAA</div>
+                `
+              : html`
+                  <div class="label-item" style="width: ${100 - s1Percent}%">AA</div>
+                `
+            }
+          </div>`
+        : ''
+      }
     `;
   }
 }
