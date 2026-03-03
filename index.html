@@ -5,12 +5,12 @@
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/utils.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Color Contrast Analyser</title>
+    <title>Colour Contrast Analyser</title>
   </head>
 
   <body>
-    <main x-data>
-      <h1 class="sr-only">Colour Contrast Analyser</h1>
+    <main x-data x-effect="document.title = $store.uiStore.t('app.title'); document.documentElement.lang = $store.uiStore.locale">
+      <h1 class="sr-only" x-text="$store.uiStore.t('app.title')">Colour Contrast Analyser</h1>
       <div class="colors">
         <!-- Foreground Color -->
         <div class="wrapper" x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`">
@@ -20,7 +20,7 @@
               x-bind:style="`background-color: ${$store.uiStore.foregroundHex}`"
               x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
             >
-              <h2>Foreground</h2>
+              <h2 x-text="$store.uiStore.t('color.foreground')">Foreground</h2>
               <p
                 class="hex-value"
                 x-text="$store.uiStore.foregroundHex"
@@ -29,7 +29,7 @@
                 class="btn"
                 @click="$store.uiStore.pickColor(true)"
                 x-bind:disabled="$store.uiStore.isPicking"
-                aria-label="Pick foreground Colour"
+                x-bind:aria-label="$store.uiStore.t('color.pick_foreground')"
               >
                 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M405.6 93.2L304 194.8L294.6 185.4C282.1 172.9 261.8 172.9 249.3 185.4C236.8 197.9 236.8 218.2 249.3 230.7L409.3 390.7C421.8 403.2 442.1 403.2 454.6 390.7C467.1 378.2 467.1 357.9 454.6 345.4L445.2 336L546.8 234.4C585.8 195.4 585.8 132.2 546.8 93.3C507.8 54.4 444.6 54.3 405.7 93.3zM119.4 387.3C104.4 402.3 96 422.7 96 443.9L96 486.3L69.4 526.2C60.9 538.9 62.6 555.8 73.4 566.6C84.2 577.4 101.1 579.1 113.8 570.6L153.7 544L196.1 544C217.3 544 237.7 535.6 252.7 520.6L362.1 411.2L316.8 365.9L207.4 475.3C204.4 478.3 200.3 480 196.1 480L160 480L160 443.9C160 439.7 161.7 435.6 164.7 432.6L274.1 323.2L228.8 277.9L119.4 387.3z"/></svg>
               </button>
@@ -46,7 +46,7 @@
               class="btn"
               @click="$store.uiStore.pickColor(false)"
               x-bind:disabled="$store.uiStore.isPicking"
-              aria-label="Pick background Colour"
+              x-bind:aria-label="$store.uiStore.t('color.pick_background')"
             >
             <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Pro v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M329.4 169.4L425.4 73.4C437.9 60.9 458.2 60.9 470.7 73.4L566.7 169.4C579.2 181.9 579.2 202.2 566.7 214.7C554.2 227.2 533.9 227.2 521.4 214.7L480 173.3L480 288L544 288C561.7 288 576 302.3 576 320C576 337.7 561.7 352 544 352L224 352L224 466.7L265.4 425.3C277.9 412.8 298.2 412.8 310.7 425.3C323.2 437.8 323.2 458.1 310.7 470.6L214.7 566.6C202.2 579.1 181.9 579.1 169.4 566.6L73.4 470.6C60.9 458.1 60.9 437.8 73.4 425.3C85.9 412.8 106.2 412.8 118.7 425.3L160 466.7L160 352L96 352C78.3 352 64 337.7 64 320C64 302.3 78.3 288 96 288L416 288L416 173.3L374.6 214.7C362.1 227.2 341.8 227.2 329.3 214.7C316.8 202.2 316.8 181.9 329.3 169.4zM480 400L480 544C480 561.7 465.7 576 448 576C430.3 576 416 561.7 416 544L416 400L480 400zM160 240L160 96C160 78.3 174.3 64 192 64C209.7 64 224 78.3 224 96L224 240L160 240z"/></svg>
             </button></div>
@@ -59,7 +59,7 @@
                 x-bind:style="`background-color: ${$store.uiStore.backgroundHex}`"
                 x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
               >
-                <h2>Background</h2>
+                <h2 x-text="$store.uiStore.t('color.background')">Background</h2>
                 <p
                   class="hex-value"
                   x-text="$store.uiStore.backgroundHex"
@@ -68,7 +68,7 @@
                   class="btn"
                   @click="$store.uiStore.pickColor(false)"
                   x-bind:disabled="$store.uiStore.isPicking"
-                  aria-label="Pick background Colour"
+                  x-bind:aria-label="$store.uiStore.t('color.pick_background')"
                 >
                   <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="24px" width="24px"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M405.6 93.2L304 194.8L294.6 185.4C282.1 172.9 261.8 172.9 249.3 185.4C236.8 197.9 236.8 218.2 249.3 230.7L409.3 390.7C421.8 403.2 442.1 403.2 454.6 390.7C467.1 378.2 467.1 357.9 454.6 345.4L445.2 336L546.8 234.4C585.8 195.4 585.8 132.2 546.8 93.3C507.8 54.4 444.6 54.3 405.7 93.3zM119.4 387.3C104.4 402.3 96 422.7 96 443.9L96 486.3L69.4 526.2C60.9 538.9 62.6 555.8 73.4 566.6C84.2 577.4 101.1 579.1 113.8 570.6L153.7 544L196.1 544C217.3 544 237.7 535.6 252.7 520.6L362.1 411.2L316.8 365.9L207.4 475.3C204.4 478.3 200.3 480 196.1 480L160 480L160 443.9C160 439.7 161.7 435.6 164.7 432.6L274.1 323.2L228.8 277.9L119.4 387.3z"/></svg>
                 </button>
@@ -85,15 +85,15 @@
       <!-- Contrast Ratio -->
       <section class="results">
         <p class="contrast-ratio">
-          <strong>Contrast Ratio:</strong>
+          <strong x-text="$store.uiStore.t('results.contrast_ratio')">Contrast Ratio:</strong>
           <span><span x-text="$store.uiStore.contrastRatio"></span>:1</span>
         </p>
         <div class="progress">
           <p class="label">
-            <span>Regular Text</span>
-            <span class="fail" x-show="!$store.uiStore.level143Regular">FAIL</span>
-            <span class="pass" x-show="$store.uiStore.level143Regular && !$store.uiStore.level146Regular">PASS</span>
-            <span class="pass" x-show="$store.uiStore.level146Regular">PASS</span>
+            <span x-text="$store.uiStore.t('results.regular_text')">Regular Text</span>
+            <span class="fail" x-show="!$store.uiStore.level143Regular" x-text="$store.uiStore.t('results.fail')">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level143Regular && !$store.uiStore.level146Regular" x-text="$store.uiStore.t('results.pass')">PASS</span>
+            <span class="pass" x-show="$store.uiStore.level146Regular" x-text="$store.uiStore.t('results.pass')">PASS</span>
           </p>
           <!-- 1.4.3 Regular text 4.5 AA - 7 AAA -->
           <span class="icon">
@@ -104,10 +104,10 @@
         </div>
         <div class="progress">
           <p class="label">
-            <span>Large Text</span>
-            <span class="fail" x-show="!$store.uiStore.level143Large">FAIL</span>
-            <span class="pass" x-show="$store.uiStore.level143Large && !$store.uiStore.level146Large">PASS</span>
-            <span class="pass" x-show="$store.uiStore.level146Large">PASS</span>
+            <span x-text="$store.uiStore.t('results.large_text')">Large Text</span>
+            <span class="fail" x-show="!$store.uiStore.level143Large" x-text="$store.uiStore.t('results.fail')">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level143Large && !$store.uiStore.level146Large" x-text="$store.uiStore.t('results.pass')">PASS</span>
+            <span class="pass" x-show="$store.uiStore.level146Large" x-text="$store.uiStore.t('results.pass')">PASS</span>
           </p>
           <!-- 1.4.6 Large text 3.1 AA - 4.5 AAA -->
           <span class="icon">
@@ -118,9 +118,9 @@
         </div>
         <div class="progress">
           <p class="label">
-            <span>Non-text</span>
-            <span class="fail" x-show="!$store.uiStore.level1411">FAIL</span>
-            <span class="pass" x-show="$store.uiStore.level1411">PASS</span>
+            <span x-text="$store.uiStore.t('results.non_text')">Non-text</span>
+            <span class="fail" x-show="!$store.uiStore.level1411" x-text="$store.uiStore.t('results.fail')">FAIL</span>
+            <span class="pass" x-show="$store.uiStore.level1411" x-text="$store.uiStore.t('results.pass')">PASS</span>
           </p>
           <!-- 1.4.11 Non-text 3.1 AA -->
           <span class="icon">

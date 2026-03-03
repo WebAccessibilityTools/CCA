@@ -19,6 +19,14 @@ import Alpine from 'alpinejs';
 // Import store and interfaces from store.ts
 import { UIStore, BackendStore } from './store';
 
+// Import du module i18n
+// Import i18n module
+import { initLocale, onLocaleChange, setLocale } from './i18n';
+
+// Import de la détection de locale système via Tauri plugin OS
+// Import system locale detection via Tauri plugin OS
+import { locale as getSystemLocale } from '@tauri-apps/plugin-os';
+
 // Import Webcomponents
 import './components/ProgressBar';
 
@@ -32,6 +40,24 @@ import './components/ProgressBar';
 Alpine.store('uiStore', UIStore);
 
 // =============================================================================
+// SYNCHRONISATION i18n BIDIRECTIONNELLE
+// BIDIRECTIONAL i18n SYNCHRONIZATION
+// =============================================================================
+
+// Quand la locale change côté frontend (setLocale), on synchronise Alpine et Rust
+// When locale changes on frontend (setLocale), sync Alpine and Rust
+onLocaleChange((locale) => {
+  const alpineStore = Alpine.store('uiStore') as UIStore;
+  alpineStore.locale = locale;
+
+  // Notifie le backend Rust pour reconstruire les menus
+  // Notify Rust backend to rebuild menus
+  invoke('set_locale', { locale }).catch((err) => {
+    console.error('Error setting locale in backend:', err);
+  });
+});
+
+// =============================================================================
 // INITIALISATION
 // INITIALIZATION
 // =============================================================================
@@ -43,6 +69,30 @@ Alpine.start();
 // Fonction immédiatement invoquée asynchrone (IIFE) pour la synchronisation avec Tauri
 // Immediately Invoked Async Function Expression (IIFE) for Tauri synchronization
 (async () => {
+  // Étape 0 : Détection de la locale système et initialisation i18n
+  // Step 0: Detect system locale and initialize i18n
+  let detectedLocale = 'en';
+  try {
+    const systemLocale = await getSystemLocale();
+    detectedLocale = initLocale(systemLocale ?? undefined);
+  } catch (error) {
+    console.error('Error detecting system locale:', error);
+    detectedLocale = initLocale();
+  }
+
+  // Synchronise la locale dans le store Alpine
+  // Sync locale into Alpine store
+  const alpineStore = Alpine.store('uiStore') as UIStore;
+  alpineStore.locale = detectedLocale;
+
+  // Envoie la locale initiale au backend
+  // Send initial locale to backend
+  try {
+    await invoke('set_locale', { locale: detectedLocale });
+  } catch (error) {
+    console.error('Error setting initial locale:', error);
+  }
+
   // Étape 1 : Récupération de l'état initial du store Tauri au chargement de la page
   // Step 1: Fetch initial Tauri store state on page load
   try {
@@ -52,11 +102,11 @@ Alpine.start();
 
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('uiStore') as UIStore;
+    const store = Alpine.store('uiStore') as UIStore;
 
     // Synchronise le store Alpine avec l'état initial de Tauri
     // Synchronize Alpine store with Tauri's initial state
-    alpineStore.updateFromTauriStore(initialStore);
+    store.updateFromTauriStore(initialStore);
   } catch (error) {
     // Affiche l'erreur si le chargement initial échoue
     // Display error if initial load fails
@@ -68,13 +118,13 @@ Alpine.start();
   await listen<BackendStore>('store-updated', (event) => {
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('uiStore') as UIStore;
+    const store = Alpine.store('uiStore') as UIStore;
 
     // Synchronise le store Alpine avec le nouveau payload reçu de Tauri
     // Ceci rend l'interface réactive aux changements du backend
     // Synchronize Alpine store with new payload received from Tauri
     // This makes the interface reactive to backend changes
-    alpineStore.updateFromTauriStore(event.payload);
+    store.updateFromTauriStore(event.payload);
   });
 
   // Étape 3 : Écoute les changements de profil ICC depuis le menu
@@ -90,15 +140,29 @@ Alpine.start();
 
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('uiStore') as UIStore;
+    const store = Alpine.store('uiStore') as UIStore;
 
     // Met à jour le profil ICC dans le store Alpine
     // Update ICC profile in Alpine store
-    alpineStore.currentICCProfile = profileName;
+    store.currentICCProfile = profileName;
   });
 
-  // Étape 4 : Récupère le profil ICC initial
-  // Step 4: Get initial ICC profile
+  // Étape 4 : Écoute les changements de locale depuis le menu natif Rust
+  // Step 4: Listen for locale changes from native Rust menu
+  await listen<string>('locale-changed', (event) => {
+    const locale = event.payload;
+
+    // Appelle setLocale qui mettra à jour le module i18n et déclenchera onLocaleChange
+    // Calls setLocale which updates the i18n module and triggers onLocaleChange
+    // Note: onLocaleChange invoquera invoke('set_locale') mais le backend est déjà à jour,
+    // donc c'est un no-op côté Rust (la locale est déjà la bonne)
+    // Note: onLocaleChange will invoke invoke('set_locale') but backend is already up to date,
+    // so it's a no-op on Rust side (locale is already correct)
+    setLocale(locale);
+  });
+
+  // Étape 5 : Récupère le profil ICC initial
+  // Step 5: Get initial ICC profile
   try {
     // Appelle la commande pour obtenir le profil ICC actuellement sélectionné
     // Call command to get currently selected ICC profile
@@ -106,11 +170,11 @@ Alpine.start();
 
     // Récupère la référence au store Alpine.js
     // Get reference to Alpine.js store
-    const alpineStore = Alpine.store('uiStore') as UIStore;
+    const store = Alpine.store('uiStore') as UIStore;
 
     // Met à jour le profil ICC dans le store (ou 'Auto' par défaut)
     // Update ICC profile in store (or 'Auto' as default)
-    alpineStore.currentICCProfile = currentProfile || 'Auto';
+    store.currentICCProfile = currentProfile || 'Auto';
   } catch (error) {
     // Affiche l'erreur si la récupération échoue
     // Display error if retrieval fails

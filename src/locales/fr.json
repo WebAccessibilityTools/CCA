@@ -1,0 +1,33 @@
+{
+  "app": {
+    "title": "Analyseur de contraste des couleurs"
+  },
+  "color": {
+    "foreground": "Premier plan",
+    "background": "Arrière-plan",
+    "pick_foreground": "Sélectionner la couleur de premier plan",
+    "pick_background": "Sélectionner la couleur d'arrière-plan"
+  },
+  "results": {
+    "contrast_ratio": "Ratio de contraste :",
+    "regular_text": "Texte standard",
+    "large_text": "Grand texte",
+    "non_text": "Non-texte",
+    "pass": "PASS",
+    "fail": "FAIL"
+  },
+  "menu": {
+    "about": "À propos de CCA",
+    "hide": "Masquer",
+    "hide_others": "Masquer les autres",
+    "show_all": "Tout afficher",
+    "quit": "Quitter",
+    "colour_profiles": "Profils de couleurs",
+    "language": "Langue"
+  },
+  "settings": {
+    "title": "Préférences",
+    "language": "Langue",
+    "auto": "Automatique (système)"
+  }
+}

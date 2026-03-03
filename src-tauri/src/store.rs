@@ -109,6 +109,7 @@ impl Default for ResultStore {
 /// Application state wrapped in Mutex for thread-safety
 pub struct AppState {
     pub store: Mutex<ResultStore>,
+    pub locale: Mutex<String>,
 }
 
 // =============================================================================

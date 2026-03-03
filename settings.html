@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: oklch(0.99 0.00 0);
+        color: oklch(0.44 0.01 286);
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: oklch(0.27 0.01 286);
+        margin-bottom: 1.25rem;
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      label {
+        font-size: 0.9rem;
+      }
+      select {
+        flex: 1;
+        font-family: inherit;
+        font-size: 0.9rem;
+        padding: 0.35rem 0.5rem;
+        border: 1px solid oklch(0.87 0.01 286);
+        border-radius: 0.35rem;
+        background: white;
+        color: oklch(0.27 0.01 286);
+      }
+    </style>
+  </head>
+  <body>
+    <main x-data x-effect="
+      document.title = $store.settings.t('settings.title');
+      document.documentElement.lang = $store.settings.locale;
+    ">
+      <h1 x-text="$store.settings.t('settings.title')">Settings</h1>
+      <div class="field">
+        <label x-text="$store.settings.t('settings.language')">Language</label>
+        <select :value="$store.settings.preference"
+                @change="$store.settings.apply($event.target.value)">
+          <option value="auto" x-text="$store.settings.t('settings.auto')">Automatic (system)</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+      </div>
+    </main>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

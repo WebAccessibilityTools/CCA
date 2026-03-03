@@ -7,6 +7,10 @@
 // Import invoke function to call Tauri commands
 import { invoke } from "@tauri-apps/api/core";
 
+// Import du module i18n
+// Import i18n module
+import { t as i18nT, setLocale } from './i18n';
+
 // Interface pour le store Tauri (état global côté backend)
 // Interface for Tauri store (global state on backend side)
 export interface BackendStore {
@@ -50,6 +54,15 @@ export interface BackendStore {
 export interface UIStore {
   // Platform
   platform: string;
+
+  // Locale courante / Current locale
+  locale: string;
+
+  // Traduction / Translation
+  t(key: string): string;
+
+  // Changement de locale / Switch locale
+  switchLocale(locale: string): void;
 
   // Indique si une sélection de couleur est en cours
   // Indicates if a color selection is in progress
@@ -113,6 +126,25 @@ export interface UIStore {
 // Alpine.js store configuration exported for use in main.ts
 export const UIStore = {
   platform: 'unknown',
+
+  // Locale courante (initialisée par main.ts)
+  // Current locale (initialized by main.ts)
+  locale: 'en',
+
+  // Traduction : lit this.locale pour créer une dépendance réactive Alpine
+  // Translation: reads this.locale to create an Alpine reactive dependency
+  t(this: UIStore, key: string): string {
+    // Lire this.locale crée une dépendance Alpine, ce qui force le re-render
+    // Reading this.locale creates an Alpine dependency, forcing re-render
+    void this.locale;
+    return i18nT(key);
+  },
+
+  // Changement de locale depuis le frontend
+  // Switch locale from the frontend
+  switchLocale(_this: UIStore, locale: string): void {
+    setLocale(locale);
+  },
 
   // État initial : aucune sélection en cours
   // Initial state: no selection in progress

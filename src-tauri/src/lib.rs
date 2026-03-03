@@ -6,6 +6,9 @@
 // Import de Mutex pour la synchronisation thread-safe
 // Import Mutex for thread-safe synchronization
 use std::sync::Mutex;
+use tauri::Manager;
+use tauri::WebviewWindowBuilder;
+use tauri::WebviewUrl;
 
 // =============================================================================
 // MODULES
@@ -31,6 +34,10 @@ mod color;
 /// ICC profile management
 mod icc;
 
+/// Internationalisation des menus
+/// Menu internationalization
+mod i18n;
+
 // =============================================================================
 // INITIALISATION
 // INITIALIZATION
@@ -39,7 +46,7 @@ mod icc;
 
 // Import pour le système de menu
 // Import for the menu system
-use tauri::menu::{CheckMenuItemBuilder, Menu, PredefinedMenuItem, Submenu, SubmenuBuilder, AboutMetadata};
+use tauri::menu::{CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder, AboutMetadata};
 
 // Import pour l'émission d'événements
 // Import for event emission
@@ -102,17 +109,18 @@ fn menu_id_to_profile_name(menu_id: &str) -> Option<String> {
 ///
 /// # Arguments
 /// * `app` - Handle de l'application Tauri / Tauri application handle
+/// * `locale` - Locale courante / Current locale
 ///
 /// # Returns
 /// * `Result<Submenu<tauri::Wry>, tauri::Error>` - Le sous-menu ICC créé
-fn create_icc_submenu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Submenu<R>, tauri::Error> {
+fn create_icc_submenu<R: tauri::Runtime>(app: &tauri::AppHandle<R>, locale: &str) -> Result<Submenu<R>, tauri::Error> {
     // Récupère la liste des profils ICC disponibles sur le système
     // Get the list of ICC profiles available on the system
     let profiles = icc::list_icc_profiles();
 
     // Crée le constructeur du sous-menu ICC
     // Create the ICC submenu builder
-    let mut icc_submenu_builder = SubmenuBuilder::new(app, "Colour Profiles");
+    let mut icc_submenu_builder = SubmenuBuilder::new(app, i18n::menu_t(locale, "colour_profiles"));
 
     // Itère sur chaque profil pour créer un élément de menu
     // Iterate over each profile to create a menu item
@@ -145,13 +153,141 @@ fn create_icc_submenu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Su
     icc_submenu_builder.build()
 }
 
+/// Construit et applique le menu complet de l'application
+/// Builds and applies the full application menu
+///
+/// # Arguments
+/// * `app` - Handle de l'application Tauri / Tauri application handle
+/// * `locale` - Locale courante / Current locale
+fn rebuild_menu(app: &tauri::AppHandle, locale: &str) -> Result<(), tauri::Error> {
+    // === MENU APPLICATION (premier menu sur macOS) ===
+    // === APPLICATION MENU (first menu on macOS) ===
+    // Crée l'élément "À propos" avec métadonnées / Create "About" item with metadata
+    let about = PredefinedMenuItem::about(
+        app,
+        Some(i18n::menu_t(locale, "about")), // Titre / Title
+        Some(AboutMetadata {
+            name: Some("CCA".to_string()),    // Nom de l'app / App name
+            version: Some("1.0.0".to_string()),           // Version / Version
+            copyright: Some("xxx Licence".to_string()), // Copyright / Copyright
+            authors: Some(vec!["Cédric Trévisan".to_string()]), // Auteurs / Authors
+            ..Default::default()                          // Autres champs par défaut / Other fields default
+        }),
+    )?;
+
+    // Élément Settings avec raccourci Cmd+, / Settings item with Cmd+, shortcut
+    let settings_item = MenuItemBuilder::with_id("settings", i18n::menu_t(locale, "settings"))
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+
+    // Éléments standards du menu Application / Standard Application menu items
+    let separator1 = PredefinedMenuItem::separator(app)?;
+    let hide = PredefinedMenuItem::hide(app, Some(i18n::menu_t(locale, "hide")))?;
+    let hide_others = PredefinedMenuItem::hide_others(app, Some(i18n::menu_t(locale, "hide_others")))?;
+    let show_all = PredefinedMenuItem::show_all(app, Some(i18n::menu_t(locale, "show_all")))?;
+    let separator2 = PredefinedMenuItem::separator(app)?;
+    let quit = PredefinedMenuItem::quit(app, Some(i18n::menu_t(locale, "quit")))?;
+
+    // === SOUS-MENU LANGUAGE ===
+    // === LANGUAGE SUBMENU ===
+    let lang_en = CheckMenuItemBuilder::with_id("lang_en", "English")
+        .checked(locale == "en")
+        .build(app)?;
+    let lang_fr = CheckMenuItemBuilder::with_id("lang_fr", "Français")
+        .checked(locale == "fr")
+        .build(app)?;
+
+    let language_submenu = SubmenuBuilder::new(app, i18n::menu_t(locale, "language"))
+        .item(&lang_en)
+        .item(&lang_fr)
+        .build()?;
+
+    // Construit le sous-menu Application / Build Application submenu
+    let app_menu = Submenu::with_items(
+        app,
+        "CCA",  // Nom affiché dans la barre de menu / Name shown in menu bar
+        true,       // Activé / Enabled
+        &[
+            &about,           // À propos / About
+            &PredefinedMenuItem::separator(app)?,
+            &settings_item,   // Settings… / Préférences…
+            &separator1,      // --- / ---
+            &hide,            // Masquer / Hide
+            &hide_others, // Masquer les autres / Hide others
+            &show_all,    // Tout afficher / Show all
+            &separator2,  // --- / ---
+            &language_submenu, // Language
+            &PredefinedMenuItem::separator(app)?,
+            &quit,        // Quitter / Quit
+        ],
+    )?;
+
+    #[cfg(target_os = "macos")]
+    {
+        // Crée le sous-menu ICC avec les profils
+        // Create the ICC submenu with profiles
+        let icc_submenu = create_icc_submenu(app, locale)?;
+
+        // Crée le menu de l'application
+        // Get the application menu
+        let root_menu = Menu::with_items(app, &[
+            &app_menu,
+            &icc_submenu,
+        ])?;
+        // Applique le menu à l'application
+        // Apply menu to the application
+        app.set_menu(root_menu)?;
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        // Crée le menu de l'application
+        // Get the application menu
+        let root_menu = Menu::with_items(app, &[
+            &app_menu,
+        ])?;
+        // Applique le menu à l'application
+        // Apply menu to the application
+        app.set_menu(root_menu)?;
+    }
+
+    Ok(())
+}
+
+/// Commande Tauri pour changer la locale depuis le frontend
+/// Tauri command to change locale from frontend
+#[tauri::command]
+fn set_locale(app: tauri::AppHandle, state: tauri::State<store::AppState>, locale: String) {
+    // Met à jour la locale dans l'état
+    // Update locale in state
+    {
+        let mut current_locale = state.locale.lock().unwrap();
+        if *current_locale == locale {
+            return;
+        }
+        *current_locale = locale.clone();
+    }
+
+    // Reconstruit le menu avec la nouvelle locale
+    // Rebuild menu with new locale
+    let _ = rebuild_menu(&app, &locale);
+
+    // Émet l'événement pour notifier toutes les fenêtres
+    // Emit event to notify all windows
+    let _ = app.emit("locale-changed", &locale);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Initialise le plugin OS pour la détection de locale
+        // Initialize OS plugin for locale detection
+        .plugin(tauri_plugin_os::init())
         // Initialise l'état global du color store
         // Initialize global color store state
         .manage(store::AppState {
             store: Mutex::new(store::ResultStore::default()),
+            locale: Mutex::new("en".to_string()),
         })
         // Configure le menu de l'application
         // Configure the application menu
@@ -160,73 +296,9 @@ pub fn run() {
             // Get the application handle
             let handle = app.handle();
 
-            // === MENU APPLICATION (premier menu sur macOS) ===
-            // === APPLICATION MENU (first menu on macOS) ===
-            // Crée l'élément "À propos" avec métadonnées / Create "About" item with metadata
-            let about = PredefinedMenuItem::about(
-                app,
-                Some("About CCA"), // Titre / Title
-                Some(AboutMetadata {
-                    name: Some("CCA".to_string()),    // Nom de l'app / App name
-                    version: Some("1.0.0".to_string()),           // Version / Version
-                    copyright: Some("xxx Licence".to_string()), // Copyright / Copyright
-                    authors: Some(vec!["Cédric Trévisan".to_string()]), // Auteurs / Authors
-                    ..Default::default()                          // Autres champs par défaut / Other fields default
-                }),
-            )?;
-
-            // Éléments standards du menu Application / Standard Application menu items
-            let separator1 = PredefinedMenuItem::separator(app)?;           // Séparateur / Separator
-            let hide = PredefinedMenuItem::hide(app, Some("Masquer"))?;     // Masquer l'app / Hide app
-            let hide_others = PredefinedMenuItem::hide_others(app, Some("Masquer les autres"))?; // Masquer autres / Hide others
-            let show_all = PredefinedMenuItem::show_all(app, Some("Tout afficher"))?; // Tout afficher / Show all
-            let separator3 = PredefinedMenuItem::separator(app)?;           // Séparateur / Separator
-            let quit = PredefinedMenuItem::quit(app, Some("Quitter"))?;     // Quitter / Quit
-            
-            // Construit le sous-menu Application / Build Application submenu
-            let app_menu = Submenu::with_items(
-                app,
-                "CCA",  // Nom affiché dans la barre de menu / Name shown in menu bar
-                true,       // Activé / Enabled
-                &[
-                    &about,       // À propos / About
-                    &separator1,  // --- / ---
-                    &hide,        // Masquer / Hide
-                    &hide_others, // Masquer les autres / Hide others
-                    &show_all,    // Tout afficher / Show all
-                    &separator3,  // --- / ---
-                    &quit,        // Quitter / Quit
-                ],
-            )?;
-
-            #[cfg(target_os = "macos")]
-            {
-                // Crée le sous-menu ICC avec les profils
-                // Create the ICC submenu with profiles
-                let icc_submenu = create_icc_submenu(handle)?;
-
-                // Crée le menu de l'application
-                // Get the application menu
-                let root_menu = Menu::with_items(app,&[
-                    &app_menu,
-                    &icc_submenu,
-                ])?;
-                // Applique le menu à l'application
-                // Apply menu to the application
-                app.set_menu(root_menu)?;
-            }
-
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
-            {
-                // Crée le menu de l'application
-                // Get the application menu
-                let root_menu = Menu::with_items(app,&[
-                    &app_menu,
-                ])?;
-                // Applique le menu à l'application
-                // Apply menu to the application
-                app.set_menu(root_menu)?;
-            }
+            // Construit le menu initial avec la locale par défaut
+            // Build initial menu with default locale
+            rebuild_menu(handle, "en")?;
 
             // Retourne Ok pour indiquer le succès
             // Return Ok to indicate success
@@ -238,6 +310,52 @@ pub fn run() {
             // Récupère l'ID de l'élément de menu cliqué
             // Get the clicked menu item ID
             let menu_id = event.id().as_ref();
+
+            // === Gestion du changement de langue ===
+            // === Language change handling ===
+            match menu_id {
+                "settings" => {
+                    // Ouvre ou focus la fenêtre Settings
+                    // Open or focus the Settings window
+                    if let Some(window) = app.get_webview_window("settings") {
+                        let _ = window.set_focus();
+                    } else {
+                        let _ = WebviewWindowBuilder::new(
+                            app,
+                            "settings",
+                            WebviewUrl::App("settings.html".into()),
+                        )
+                        .title("Settings")
+                        .inner_size(400.0, 200.0)
+                        .resizable(false)
+                        .center()
+                        .build();
+                    }
+                    return;
+                }
+                "lang_en" | "lang_fr" => {
+                    let new_locale = if menu_id == "lang_en" { "en" } else { "fr" };
+
+                    // Met à jour la locale dans l'état
+                    // Update locale in state
+                    let state = app.state::<store::AppState>();
+                    {
+                        let mut locale = state.locale.lock().unwrap();
+                        *locale = new_locale.to_string();
+                    }
+
+                    // Reconstruit le menu avec la nouvelle locale
+                    // Rebuild menu with new locale
+                    let _ = rebuild_menu(app, new_locale);
+
+                    // Émet l'événement pour notifier le frontend
+                    // Emit event to notify frontend
+                    let _ = app.emit("locale-changed", new_locale);
+
+                    return;
+                }
+                _ => {}
+            }
 
             // Tente d'extraire le nom du profil depuis l'ID
             // Try to extract profile name from ID
@@ -323,6 +441,7 @@ pub fn run() {
             icc::list_icc_profiles,
             icc::select_icc_profile,
             icc::get_selected_icc_profile,
+            set_locale,
         ])
         // Lance l'application Tauri
         // Run the Tauri application

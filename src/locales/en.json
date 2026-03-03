@@ -1,0 +1,33 @@
+{
+  "app": {
+    "title": "Colour Contrast Analyser"
+  },
+  "color": {
+    "foreground": "Foreground",
+    "background": "Background",
+    "pick_foreground": "Pick foreground colour",
+    "pick_background": "Pick background colour"
+  },
+  "results": {
+    "contrast_ratio": "Contrast Ratio:",
+    "regular_text": "Regular Text",
+    "large_text": "Large Text",
+    "non_text": "Non-text",
+    "pass": "PASS",
+    "fail": "FAIL"
+  },
+  "menu": {
+    "about": "About CCA",
+    "hide": "Hide",
+    "hide_others": "Hide Others",
+    "show_all": "Show All",
+    "quit": "Quit",
+    "colour_profiles": "Colour Profiles",
+    "language": "Language"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "auto": "Automatic (system)"
+  }
+}
