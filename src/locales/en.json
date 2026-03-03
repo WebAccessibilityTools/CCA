@@ -6,7 +6,17 @@
     "foreground": "Foreground",
     "background": "Background",
     "pick_foreground": "Pick foreground colour",
-    "pick_background": "Pick background colour"
+    "pick_background": "Pick background colour",
+    "pick_switch": "Switch colours",
+    "red": "Red",
+    "green": "Green",
+    "blue": "Blue",
+    "component_value": "Colour component value",
+    "component_slider": "Colour component slider",
+    "slider_mode": "Slider display mode",
+    "slider_standard": "Standard",
+    "slider_colored": "Coloured",
+    "slider_dynamic": "Dynamic"
   },
   "results": {
     "contrast_ratio": "Contrast Ratio:",

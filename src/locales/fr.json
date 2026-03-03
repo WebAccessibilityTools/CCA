@@ -6,7 +6,17 @@
     "foreground": "Premier plan",
     "background": "Arrière-plan",
     "pick_foreground": "Sélectionner la couleur de premier plan",
-    "pick_background": "Sélectionner la couleur d'arrière-plan"
+    "pick_background": "Sélectionner la couleur d'arrière-plan",
+    "pick_switch": "Intervertir les couleurs",
+    "red": "Rouge",
+    "green": "Vert",
+    "blue": "Bleu",
+    "component_value": "Valeur de la composante couleur",
+    "component_slider": "Curseur de la composante couleur",
+    "slider_mode": "Mode d'affichage des curseurs",
+    "slider_standard": "Standard",
+    "slider_colored": "Coloré",
+    "slider_dynamic": "Dynamique"
   },
   "results": {
     "contrast_ratio": "Ratio de contraste :",

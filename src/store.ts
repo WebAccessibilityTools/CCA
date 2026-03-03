@@ -116,6 +116,10 @@ export interface UIStore {
   // Method to swap foreground and background colors
   switchColor(): Promise<void>;
 
+  // Méthode pour mettre à jour une composante RGB d'une couleur
+  // Method to update an RGB component of a color
+  updateColor(key: string, component: 'r' | 'g' | 'b', value: number): Promise<void>;
+
   // Méthode pour mettre à jour le store Alpine depuis le store Tauri
   // Method to update Alpine store from Tauri store
   updateFromTauriStore(store: BackendStore): void;
@@ -243,6 +247,19 @@ export const UIStore = {
       await invoke('update_store', { key: 'background', r: fr, g: fg, b: fb });
     } catch (error) {
       console.error('Error switching colors:', error);
+    }
+  },
+
+  // Méthode pour mettre à jour une composante RGB d'une couleur
+  // Method to update an RGB component of a color
+  async updateColor(this: UIStore, key: string, component: 'r' | 'g' | 'b', value: number) {
+    const rgb = key === 'foreground' ? this.foregroundRgb : this.backgroundRgb;
+    const [r, g, b] = rgb.split(',').map(v => parseInt(v.trim()));
+    const updated = { r, g, b, [component]: value };
+    try {
+      await invoke('update_store', { key, r: updated.r, g: updated.g, b: updated.b });
+    } catch (error) {
+      console.error('Error updating color:', error);
     }
   },
 

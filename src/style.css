@@ -187,6 +187,7 @@ strong {
 .results {
   .contrast-ratio {
     text-align: center;
+    border-top: 1px solid var(--color-300);
     border-bottom: 1px solid var(--color-300);
     margin: 0 2rem;
     padding: 1rem;
@@ -234,7 +235,90 @@ strong {
 /* Conteneur des informations de couleur (hex, RGB) */
 /* Color information container (hex, RGB) */
 .color-controls {
-  padding: 1rem;
+  padding: 0.5rem 1rem;
+  position: relative;
+
+  .btn-slider-mode {
+    display: flex;
+    justify-content: flex-end;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-500);
+    padding: 0;
+    margin-left: auto;
+    svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+  }
+
+  fieldset {
+    margin: 0.3rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: none;
+    span:first-child {
+      width: 1ch;
+    }
+    input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--color-300);
+      outline: none;/*
+      &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid var(--color-400);
+        cursor: pointer;
+      }*/
+    }
+    .rgb-input {
+      width: 4ch;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid var(--color-300);
+      border-radius: 3px;
+      padding: 0 0.2rem;
+      background: transparent;
+      -moz-appearance: textfield;
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      &:focus {
+        outline: 1px solid var(--color-500);
+      }
+    }
+  }
+
+  /* Mode statique : couleur fixe par canal */
+  &.slider-mode-static {
+    .slider-r { background: linear-gradient(to right, #000, #f00); }
+    .slider-g { background: linear-gradient(to right, #000, #0f0); }
+    .slider-b { background: linear-gradient(to right, #000, #00f); }
+  }
+
+  /* Mode dynamique : dégradé basé sur les autres composantes */
+  &.slider-mode-dynamic {
+    input[type="range"] {
+      background: linear-gradient(to right, var(--slider-from, #000), var(--slider-to, #fff));
+    }
+  }
 }
 
 /* Affichage de la valeur hexadécimale */
