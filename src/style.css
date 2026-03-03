@@ -68,16 +68,25 @@ strong {
   border-radius: 50%;
   cursor: pointer;
   border: var(--button-border-size) solid var(--color-600);
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  svg {
+    fill: var(--color-600);
+    height: 24px;
+    width: 24px;
+  }
 
   &.small {
     width: 2rem;
     height: 2rem;
+    svg {
+      height: 20px;
+      width: 20px;
+    }
   }
 
-  svg {
-    fill: var(--color-600);
-  }
   /* Button hover state*/
   &:hover {
     background-color: var(--color-600);
