@@ -158,6 +158,12 @@ strong {
       position: relative;
       z-index: 99;
       transform: translateY(-50%);
+      svg {
+        transition: transform 0.3s ease;
+      }
+      &.rotated svg {
+        transform: rotate(180deg);
+      }
     }
   }
 }

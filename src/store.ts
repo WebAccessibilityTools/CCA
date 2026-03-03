@@ -112,6 +112,10 @@ export interface UIStore {
   // Method to launch the color picker
   pickColor(fg: boolean): Promise<void>;
 
+  // Méthode pour intervertir les couleurs de premier plan et d'arrière-plan
+  // Method to swap foreground and background colors
+  switchColor(): Promise<void>;
+
   // Méthode pour mettre à jour le store Alpine depuis le store Tauri
   // Method to update Alpine store from Tauri store
   updateFromTauriStore(store: BackendStore): void;
@@ -213,6 +217,32 @@ export const UIStore = {
       // Désactive l'indicateur de sélection (réactive le bouton)
       // Disable picking indicator (re-enable button)
       this.isPicking = false;
+    }
+  },
+
+  // Méthode pour intervertir les couleurs de premier plan et d'arrière-plan
+  // Method to swap foreground and background colors
+  async switchColor(this: UIStore) {
+    // Sauvegarde les valeurs RGB actuelles du premier plan
+    // Save current foreground RGB values
+    const fgRgb = this.foregroundRgb;
+    const bgRgb = this.backgroundRgb;
+
+    // Parse les valeurs RGB depuis les chaînes "r, g, b"
+    // Parse RGB values from "r, g, b" strings
+    const [fr, fg, fb] = fgRgb.split(',').map(v => parseInt(v.trim()));
+    const [br, bg, bb] = bgRgb.split(',').map(v => parseInt(v.trim()));
+
+    try {
+      // Met à jour le foreground avec les anciennes valeurs du background
+      // Update foreground with old background values
+      await invoke('update_store', { key: 'foreground', r: br, g: bg, b: bb });
+
+      // Met à jour le background avec les anciennes valeurs du foreground
+      // Update background with old foreground values
+      await invoke('update_store', { key: 'background', r: fr, g: fg, b: fb });
+    } catch (error) {
+      console.error('Error switching colors:', error);
     }
   },
 
