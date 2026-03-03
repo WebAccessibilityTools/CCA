@@ -11,6 +11,14 @@ import { invoke } from "@tauri-apps/api/core";
 // Import listen function to listen to events emitted by Tauri
 import { listen } from "@tauri-apps/api/event";
 
+// Import de la fenêtre courante pour le redimensionnement
+// Import current window for resizing
+import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
+
+// Import de la détection du type d'OS pour le padding titlebar macOS
+// Import OS type detection for macOS titlebar padding
+import { type as osType } from '@tauri-apps/plugin-os';
+
 // Import d'Alpine.js pour la réactivité de l'interface utilisateur
 // Import Alpine.js for user interface reactivity
 import Alpine from 'alpinejs';
@@ -29,6 +37,42 @@ import { locale as getSystemLocale } from '@tauri-apps/plugin-os';
 
 // Import Webcomponents
 import './components/ProgressBar';
+
+// =============================================================================
+// REDIMENSIONNEMENT AUTOMATIQUE DE LA FENÊTRE
+// AUTOMATIC WINDOW RESIZING
+// See https://github.com/tauri-apps/tauri/issues/12420
+// =============================================================================
+
+// Ajuste la taille de la fenêtre Tauri au contenu via PhysicalSize
+// Adjusts Tauri window size to match content using PhysicalSize
+async function resizeWindow(container: HTMLElement) {
+  const currentWindow = getCurrentWindow();
+  const rect = container.getBoundingClientRect();
+  const factor = window.devicePixelRatio;
+  const currentSize = await currentWindow.outerSize();
+  const width = currentSize.width;
+  const height = Math.ceil(rect.height * factor);
+
+  // Ajoute le padding de la titlebar macOS si la fenêtre est décorée
+  // Add macOS titlebar padding if window is decorated
+  const isDecorated = await currentWindow.isDecorated();
+  const topPadding = isDecorated && osType() === 'macos' ? 55 : 0;
+
+  await currentWindow.setSize(new PhysicalSize(width, height + topPadding));
+}
+
+// Initialise le ResizeObserver sur <main> après le chargement du DOM
+// Initialize ResizeObserver on <main> after DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.querySelector('main');
+  if (!container) return;
+
+  const observer = new ResizeObserver(() => {
+    resizeWindow(container);
+  });
+  observer.observe(container);
+});
 
 // =============================================================================
 // CONFIGURATION DU STORE ALPINE.JS

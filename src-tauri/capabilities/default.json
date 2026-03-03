@@ -5,6 +5,9 @@
   "windows": ["main", "settings"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-size",
+    "core:window:allow-is-decorated",
+    "core:window:allow-outer-size",
     "opener:default",
     "os:default"
   ]

@@ -39,6 +39,7 @@
 html, body {
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 /* Styles du corps de la page - centrage vertical et horizontal */
