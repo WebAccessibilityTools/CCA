@@ -24,7 +24,8 @@
     "large_text": "Grand texte",
     "non_text": "Non-texte",
     "pass": "PASS",
-    "fail": "FAIL"
+    "fail": "FAIL",
+    "toggle_details": "Afficher/masquer les détails"
   },
   "menu": {
     "about": "À propos de CCA",

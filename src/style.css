@@ -226,6 +226,52 @@ strong {
       flex: 1;
     }
   }
+
+  .buttons {
+    display: flex;
+    justify-content: center;
+    height: 0;
+    .btn {
+      position: relative;
+      z-index: 99;
+      transform: translateY(-50%);
+      svg {
+        width: 12px;
+        height: 12px;
+        fill: currentColor;
+      }
+    }
+  }
+
+  .progress-compact {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 1rem 0 0.5rem;
+    .compact-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      .icon {
+        display: flex;
+        align-items: center;
+        svg.non-active {
+          opacity: 0.2;
+          margin-left: -1rem;
+        }
+      }
+      .pass {
+        font-weight: bold;
+        font-size: 0.75rem;
+        color: var(--color-green-700);
+      }
+      .fail {
+        font-weight: bold;
+        font-size: 0.75rem;
+        color: var(--color-red-700);
+      }
+    }
+  }
 }
 /* -----------------------------------------------------------------------------
    INFORMATIONS DE COULEUR

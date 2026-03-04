@@ -24,7 +24,8 @@
     "large_text": "Large Text",
     "non_text": "Non-text",
     "pass": "PASS",
-    "fail": "FAIL"
+    "fail": "FAIL",
+    "toggle_details": "Toggle detailed results"
   },
   "menu": {
     "about": "About CCA",

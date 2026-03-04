@@ -225,12 +225,22 @@
         </div>
       </div>
       <!-- Contrast Ratio -->
-      <section class="results">
+      <section class="results" x-data="{ compact: false }">
         <p class="contrast-ratio">
           <strong x-text="$store.uiStore.t('results.contrast_ratio')">Contrast Ratio:</strong>
           <span><span x-text="$store.uiStore.contrastRatio"></span>:1</span>
         </p>
-        <div class="progress">
+        <div class="buttons">
+          <button
+            class="btn small"
+            @click="compact = !compact"
+            x-bind:aria-label="$store.uiStore.t('results.toggle_details')"
+          >
+            <svg x-show="!compact" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--!Font Awesome Free v7.2.0 by @fontawesome--><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"/></svg>
+            <svg x-show="compact" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--!Font Awesome Free v7.2.0 by @fontawesome--><path d="M233.4 105.4c12.5-12.5 32.8-12.5 45.3 0l192 192c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L256 173.3 86.6 342.6c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3l192-192z"/></svg>
+          </button>
+        </div>
+        <div class="progress" x-show="!compact" x-transition>
           <p class="label">
             <span x-text="$store.uiStore.t('results.regular_text')">Regular Text</span>
             <span class="fail" x-show="!$store.uiStore.level143Regular" x-text="$store.uiStore.t('results.fail')">FAIL</span>
@@ -244,7 +254,7 @@
           </span>
           <progress-bar :position="$store.uiStore.contrastRatio" split1="4.5" split2="7"></progress-bar>
         </div>
-        <div class="progress">
+        <div class="progress" x-show="!compact" x-transition>
           <p class="label">
             <span x-text="$store.uiStore.t('results.large_text')">Large Text</span>
             <span class="fail" x-show="!$store.uiStore.level143Large" x-text="$store.uiStore.t('results.fail')">FAIL</span>
@@ -258,7 +268,7 @@
           </span>
           <progress-bar :position="$store.uiStore.contrastRatio" split1="3" split2="4.5" labels="ratios"></progress-bar>
         </div>
-        <div class="progress">
+        <div class="progress" x-show="!compact" x-transition>
           <p class="label">
             <span x-text="$store.uiStore.t('results.non_text')">Non-text</span>
             <span class="fail" x-show="!$store.uiStore.level1411" x-text="$store.uiStore.t('results.fail')">FAIL</span>
@@ -269,6 +279,32 @@
             <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2rem" width="2rem"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M416 192C486.7 192 544 249.3 544 320C544 390.7 486.7 448 416 448L224 448C153.3 448 96 390.7 96 320C96 249.3 153.3 192 224 192L416 192zM608 320C608 214 522 128 416 128L224 128C118 128 32 214 32 320C32 426 118 512 224 512L416 512C522 512 608 426 608 320zM224 400C268.2 400 304 364.2 304 320C304 275.8 268.2 240 224 240C179.8 240 144 275.8 144 320C144 364.2 179.8 400 224 400z"/></svg>
           </span>
           <progress-bar :position="$store.uiStore.contrastRatio" split1="3"></progress-bar>
+        </div>
+        <!-- Vue compacte : icônes + pass/fail -->
+        <div class="progress-compact" x-show="compact" x-transition>
+          <div class="compact-item">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="1.5rem" width="1.5rem"><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+              <svg class="non-active" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2rem" width="2rem"><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+            </span>
+            <span class="fail" x-show="!$store.uiStore.level143Regular" x-text="$store.uiStore.t('results.fail')"></span>
+            <span class="pass" x-show="$store.uiStore.level143Regular" x-text="$store.uiStore.t('results.pass')"></span>
+          </div>
+          <div class="compact-item">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="2rem" width="2rem"><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+              <svg class="non-active" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="1.5rem" width="1.5rem"><path d="M349.5 115.7C344.6 103.8 332.9 96 320 96C307.1 96 295.4 103.8 290.5 115.7C197.2 339.7 143.8 467.7 130.5 499.7C123.7 516 131.4 534.7 147.7 541.5C164 548.3 182.7 540.6 189.5 524.3L221.3 448L418.6 448L450.4 524.3C457.2 540.6 475.9 548.3 492.2 541.5C508.5 534.7 516.2 516 509.4 499.7C496.1 467.7 442.7 339.7 349.4 115.7zM392 384L248 384L320 211.2L392 384z"/></svg>
+            </span>
+            <span class="fail" x-show="!$store.uiStore.level143Large" x-text="$store.uiStore.t('results.fail')"></span>
+            <span class="pass" x-show="$store.uiStore.level143Large" x-text="$store.uiStore.t('results.pass')"></span>
+          </div>
+          <div class="compact-item">
+            <span class="icon">
+              <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" height="1.8rem" width="1.8rem"><path d="M416 192C486.7 192 544 249.3 544 320C544 390.7 486.7 448 416 448L224 448C153.3 448 96 390.7 96 320C96 249.3 153.3 192 224 192L416 192zM608 320C608 214 522 128 416 128L224 128C118 128 32 214 32 320C32 426 118 512 224 512L416 512C522 512 608 426 608 320zM224 400C268.2 400 304 364.2 304 320C304 275.8 268.2 240 224 240C179.8 240 144 275.8 144 320C144 364.2 179.8 400 224 400z"/></svg>
+            </span>
+            <span class="fail" x-show="!$store.uiStore.level1411" x-text="$store.uiStore.t('results.fail')"></span>
+            <span class="pass" x-show="$store.uiStore.level1411" x-text="$store.uiStore.t('results.pass')"></span>
+          </div>
         </div>
       </section>
 
