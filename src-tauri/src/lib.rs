@@ -222,6 +222,60 @@ fn rebuild_menu(app: &tauri::AppHandle, locale: &str) -> Result<(), tauri::Error
         ],
     )?;
 
+    // === MENU ÉDITION ===
+    // === EDIT MENU ===
+    let edit_undo = PredefinedMenuItem::undo(app, None)?;
+    let edit_redo = PredefinedMenuItem::redo(app, None)?;
+    let edit_sep1 = PredefinedMenuItem::separator(app)?;
+    let edit_cut = PredefinedMenuItem::cut(app, None)?;
+    let edit_copy = PredefinedMenuItem::copy(app, None)?;
+    let edit_paste = PredefinedMenuItem::paste(app, None)?;
+    let edit_select_all = PredefinedMenuItem::select_all(app, None)?;
+
+    let mut edit_builder = SubmenuBuilder::new(app, i18n::menu_t(locale, "edit"))
+        .item(&edit_undo)
+        .item(&edit_redo)
+        .item(&edit_sep1)
+        .item(&edit_cut)
+        .item(&edit_copy)
+        .item(&edit_paste)
+        .item(&edit_select_all);
+
+    // Ajoute les modèles de copie avec leurs raccourcis
+    // Add copy templates with their shortcuts
+    let state = app.state::<store::AppState>();
+    let templates = state.templates.lock().unwrap().clone();
+
+    if !templates.is_empty() {
+        let tpl_sep = PredefinedMenuItem::separator(app)?;
+        edit_builder = edit_builder.item(&tpl_sep);
+
+        let mut tpl_submenu_builder = SubmenuBuilder::new(app, i18n::menu_t(locale, "copy_templates"));
+
+        for (i, tpl) in templates.iter().enumerate() {
+            let menu_id = format!("copy_template_{}", i);
+            let name = if tpl.name.is_empty() { format!("Template {}", i + 1) } else { tpl.name.clone() };
+
+            let item = if !tpl.shortcut.is_empty() {
+                match MenuItemBuilder::with_id(&menu_id, &name)
+                    .accelerator(&tpl.shortcut)
+                    .build(app) {
+                    Ok(item) => item,
+                    Err(_) => MenuItemBuilder::with_id(&menu_id, &name).build(app)?,
+                }
+            } else {
+                MenuItemBuilder::with_id(&menu_id, &name).build(app)?
+            };
+
+            tpl_submenu_builder = tpl_submenu_builder.item(&item);
+        }
+
+        let tpl_submenu = tpl_submenu_builder.build()?;
+        edit_builder = edit_builder.item(&tpl_submenu);
+    }
+
+    let edit_submenu = edit_builder.build()?;
+
     #[cfg(target_os = "macos")]
     {
         // Crée le sous-menu ICC avec les profils
@@ -232,6 +286,7 @@ fn rebuild_menu(app: &tauri::AppHandle, locale: &str) -> Result<(), tauri::Error
         // Get the application menu
         let root_menu = Menu::with_items(app, &[
             &app_menu,
+            &edit_submenu,
             &icc_submenu,
         ])?;
         // Applique le menu à l'application
@@ -245,6 +300,7 @@ fn rebuild_menu(app: &tauri::AppHandle, locale: &str) -> Result<(), tauri::Error
         // Get the application menu
         let root_menu = Menu::with_items(app, &[
             &app_menu,
+            &edit_submenu,
         ])?;
         // Applique le menu à l'application
         // Apply menu to the application
@@ -252,6 +308,18 @@ fn rebuild_menu(app: &tauri::AppHandle, locale: &str) -> Result<(), tauri::Error
     }
 
     Ok(())
+}
+
+/// Commande Tauri pour mettre à jour les modèles de copie depuis le frontend
+/// Tauri command to update copy templates from frontend
+#[tauri::command]
+fn set_copy_templates(app: tauri::AppHandle, state: tauri::State<store::AppState>, templates: Vec<store::CopyTemplate>) {
+    {
+        let mut tpls = state.templates.lock().unwrap();
+        *tpls = templates;
+    }
+    let locale = state.locale.lock().unwrap().clone();
+    let _ = rebuild_menu(&app, &locale);
 }
 
 /// Commande Tauri pour changer la locale depuis le frontend
@@ -288,6 +356,7 @@ pub fn run() {
         .manage(store::AppState {
             store: Mutex::new(store::ResultStore::default()),
             locale: Mutex::new("en".to_string()),
+            templates: Mutex::new(Vec::new()),
         })
         // Configure le menu de l'application
         // Configure the application menu
@@ -313,6 +382,15 @@ pub fn run() {
 
             // === Gestion du changement de langue ===
             // === Language change handling ===
+            // Gestion des modèles de copie
+            // Copy template handling
+            if menu_id.starts_with("copy_template_") {
+                if let Ok(index) = menu_id["copy_template_".len()..].parse::<usize>() {
+                    let _ = app.emit("copy-template", index);
+                }
+                return;
+            }
+
             match menu_id {
                 "settings" => {
                     // Ouvre ou focus la fenêtre Settings
@@ -320,14 +398,20 @@ pub fn run() {
                     if let Some(window) = app.get_webview_window("settings") {
                         let _ = window.set_focus();
                     } else {
+                        let settings_title = {
+                            let state = app.state::<store::AppState>();
+                            let locale = state.locale.lock().unwrap();
+                            i18n::menu_t(&locale, "settings_title")
+                        };
                         let _ = WebviewWindowBuilder::new(
                             app,
                             "settings",
                             WebviewUrl::App("settings.html".into()),
                         )
-                        .title("Settings")
-                        .inner_size(400.0, 200.0)
-                        .resizable(false)
+                        .title(settings_title)
+                        .inner_size(500.0, 450.0)
+                        .resizable(true)
+                        .min_inner_size(400.0, 700.0)
                         .center()
                         .build();
                     }
@@ -442,6 +526,7 @@ pub fn run() {
             icc::select_icc_profile,
             icc::get_selected_icc_profile,
             set_locale,
+            set_copy_templates,
         ])
         // Lance l'application Tauri
         // Run the Tauri application

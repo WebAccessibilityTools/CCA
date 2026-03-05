@@ -38,7 +38,31 @@
   },
   "settings": {
     "title": "Préférences",
+    "tab_general": "Général",
+    "tab_templates": "Modèles de copie",
     "language": "Langue",
-    "auto": "Automatique (système)"
+    "auto": "Automatique (système)",
+    "copy_templates": "Modèles de copie",
+    "add_template": "Ajouter un modèle",
+    "remove_template": "Supprimer",
+    "new_template": "Nouveau modèle",
+    "template_content": "Contenu",
+    "template_name": "Nom du modèle",
+    "copy_shortcut": "Raccourci",
+    "press_keys": "Appuyez sur les touches\u2026",
+    "no_shortcut": "Cliquer pour définir",
+    "toast_duration": "Durée du toast",
+    "toast_manual": "Fermeture manuelle",
+    "toast_seconds": "Secondes",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "tag_help_title": "Balises disponibles",
+    "tag_f_hex": "Couleur de premier plan (hex)",
+    "tag_b_hex": "Couleur d'arrière-plan (hex)",
+    "tag_cr": "Ratio de contraste (brut)",
+    "tag_crr": "Ratio de contraste (arrondi)",
+    "tag_1_4_3": "Résultat 1.4.3 Contraste (Minimum)",
+    "tag_1_4_6": "Résultat 1.4.6 Contraste (Amélioré)",
+    "tag_1_4_11": "Résultat 1.4.11 Contraste des éléments non textuels"
   }
 }

@@ -75,6 +75,87 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // =============================================================================
+// RACCOURCI CLAVIER POUR COPIER LES RÉSULTATS
+// KEYBOARD SHORTCUT TO COPY RESULTS
+// =============================================================================
+
+function eventToShortcut(e: KeyboardEvent): string {
+  const parts: string[] = [];
+  if (e.metaKey) parts.push('Cmd');
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  return parts.join('+');
+}
+
+function formatTemplate(template: string, store: UIStore): string {
+  return template
+    .replace(/%f\.hex%/g, store.foregroundHex)
+    .replace(/%b\.hex%/g, store.backgroundHex)
+    .replace(/%cr%/g, store.contrastRatio)
+    .replace(/%crr%/g, store.contrastRatio)
+    .replace(/%1\.4\.3%/g, store.level143Regular ? 'Pass' : 'Fail')
+    .replace(/%1\.4\.6%/g, store.level146Regular ? 'Pass' : 'Fail')
+    .replace(/%1\.4\.11%/g, store.level1411 ? 'Pass' : 'Fail');
+}
+
+let toastTimeout: ReturnType<typeof setTimeout>;
+function showCopyToast(text: string) {
+  const toast = document.getElementById('copy-toast');
+  if (!toast) return;
+  const duration = parseInt(localStorage.getItem('cca-toast-duration') ?? '3', 10);
+
+  toast.textContent = text;
+
+  // Mode manuel (duration === 0) : ajoute un bouton fermer
+  // Manual mode (duration === 0): add a close button
+  if (duration === 0) {
+    const btn = document.createElement('button');
+    btn.textContent = '\u00d7';
+    btn.className = 'toast-close';
+    btn.onclick = () => toast.classList.remove('visible');
+    toast.appendChild(btn);
+  }
+
+  toast.classList.add('visible');
+  clearTimeout(toastTimeout);
+  if (duration > 0) {
+    toastTimeout = setTimeout(() => toast.classList.remove('visible'), duration * 1000);
+  }
+}
+
+interface CopyTemplate {
+  template: string;
+  shortcut: string;
+}
+
+function loadCopyTemplates(): CopyTemplate[] {
+  try {
+    const raw = localStorage.getItem('cca-copy-templates');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  const defaultShortcut = navigator.platform.includes('Mac') ? 'Cmd+S' : 'Ctrl+S';
+  return [{ template: '%f.hex%/%b.hex% = ratio de %cr%:1', shortcut: defaultShortcut }];
+}
+
+document.addEventListener('keydown', (e) => {
+  const pressed = eventToShortcut(e);
+  const templates = loadCopyTemplates();
+
+  for (const tpl of templates) {
+    if (tpl.shortcut && tpl.shortcut === pressed) {
+      e.preventDefault();
+      const store = Alpine.store('uiStore') as UIStore;
+      const text = formatTemplate(tpl.template, store);
+      navigator.clipboard.writeText(text);
+      showCopyToast(text);
+      return;
+    }
+  }
+});
+
+// =============================================================================
 // CONFIGURATION DU STORE ALPINE.JS
 // ALPINE.JS STORE CONFIGURATION
 // =============================================================================
@@ -205,8 +286,36 @@ Alpine.start();
     setLocale(locale);
   });
 
-  // Étape 5 : Récupère le profil ICC initial
-  // Step 5: Get initial ICC profile
+  // Étape 5 : Écoute l'événement focus-main depuis la fenêtre settings
+  // Step 5: Listen for focus-main event from settings window
+  await listen('focus-main', () => {
+    getCurrentWindow().setFocus();
+  });
+
+  // Étape 5b : Envoie les modèles de copie au backend pour le menu Édition
+  // Step 5b: Send copy templates to backend for Edit menu
+  try {
+    const templates = loadCopyTemplates();
+    await invoke('set_copy_templates', { templates });
+  } catch (error) {
+    console.error('Error sending templates to backend:', error);
+  }
+
+  // Étape 5c : Écoute les clics sur les modèles de copie depuis le menu natif
+  // Step 5c: Listen for copy template clicks from native menu
+  await listen<number>('copy-template', (event) => {
+    const index = event.payload;
+    const templates = loadCopyTemplates();
+    if (index < templates.length) {
+      const store = Alpine.store('uiStore') as UIStore;
+      const text = formatTemplate(templates[index].template, store);
+      navigator.clipboard.writeText(text);
+      showCopyToast(text);
+    }
+  });
+
+  // Étape 6 : Récupère le profil ICC initial
+  // Step 6: Get initial ICC profile
   try {
     // Appelle la commande pour obtenir le profil ICC actuellement sélectionné
     // Call command to get currently selected ICC profile

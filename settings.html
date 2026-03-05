@@ -4,60 +4,117 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: oklch(0.99 0.00 0);
-        color: oklch(0.44 0.01 286);
-        padding: 1.5rem;
-      }
-      h1 {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: oklch(0.27 0.01 286);
-        margin-bottom: 1.25rem;
-      }
-      .field {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-      label {
-        font-size: 0.9rem;
-      }
-      select {
-        flex: 1;
-        font-family: inherit;
-        font-size: 0.9rem;
-        padding: 0.35rem 0.5rem;
-        border: 1px solid oklch(0.87 0.01 286);
-        border-radius: 0.35rem;
-        background: white;
-        color: oklch(0.27 0.01 286);
-      }
-    </style>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/settings.css" />
   </head>
-  <body>
-    <main x-data x-effect="
-      document.title = $store.settings.t('settings.title');
-      document.documentElement.lang = $store.settings.locale;
-    ">
-      <h1 x-text="$store.settings.t('settings.title')">Settings</h1>
-      <div class="field">
-        <label x-text="$store.settings.t('settings.language')">Language</label>
-        <select :value="$store.settings.preference"
+  <body x-data x-effect="
+    document.title = $store.settings.t('settings.title');
+    document.documentElement.lang = $store.settings.locale;
+  ">
+    <main x-data="{ activeTab: 'general' }">
+
+      <!-- Onglets / Tabs -->
+      <div class="tabs" role="tablist">
+        <button role="tab"
+          :aria-selected="activeTab === 'general'"
+          :class="{ active: activeTab === 'general' }"
+          @click="activeTab = 'general'"
+          x-text="$store.settings.t('settings.tab_general')">General</button>
+        <button role="tab"
+          :aria-selected="activeTab === 'templates'"
+          :class="{ active: activeTab === 'templates' }"
+          @click="activeTab = 'templates'"
+          x-text="$store.settings.t('settings.tab_templates')">Copy templates</button>
+      </div>
+
+      <!-- Tab : Général / General -->
+      <div role="tabpanel" x-show="activeTab === 'general'" class="tab-panel">
+
+        <!-- Langue / Language -->
+        <div class="section">
+          <label for="settings-language" class="section-label" x-text="$store.settings.t('settings.language')">Language</label>
+          <div class="field">
+            <select id="settings-language"
+                :value="$store.settings.preference"
                 @change="$store.settings.apply($event.target.value)">
-          <option value="auto" x-text="$store.settings.t('settings.auto')">Automatic (system)</option>
-          <option value="en">English</option>
-          <option value="fr">Français</option>
-        </select>
+              <option value="auto" x-text="$store.settings.t('settings.auto')">Automatic (system)</option>
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Toast / Notification -->
+        <div class="section">
+          <label for="settings-toast-duration" class="section-label" x-text="$store.settings.t('settings.toast_duration')">Toast duration</label>
+          <div class="field">
+            <input id="settings-toast-duration" type="number" min="0" max="30"
+              x-model.number="$store.settings.toastDuration"
+              aria-describedby="settings-toast-duration-unit"
+            />
+            <p id="settings-toast-duration-unit" class="field-suffix" x-text="$store.settings.toastDuration === 0 ? $store.settings.t('settings.toast_manual') : $store.settings.t('settings.toast_seconds')"></p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab : Modèles de copie / Copy templates -->
+      <div role="tabpanel" x-show="activeTab === 'templates'" class="tab-panel">
+        <details class="tag-help">
+          <summary x-text="$store.settings.t('settings.tag_help_title')">Available tags</summary>
+          <dl class="tag-list">
+            <dt><code>%f.hex%</code></dt><dd x-text="$store.settings.t('settings.tag_f_hex')"></dd>
+            <dt><code>%b.hex%</code></dt><dd x-text="$store.settings.t('settings.tag_b_hex')"></dd>
+            <dt><code>%cr%</code></dt><dd x-text="$store.settings.t('settings.tag_cr')"></dd>
+            <dt><code>%crr%</code></dt><dd x-text="$store.settings.t('settings.tag_crr')"></dd>
+            <dt><code>%1.4.3%</code></dt><dd x-text="$store.settings.t('settings.tag_1_4_3')"></dd>
+            <dt><code>%1.4.6%</code></dt><dd x-text="$store.settings.t('settings.tag_1_4_6')"></dd>
+            <dt><code>%1.4.11%</code></dt><dd x-text="$store.settings.t('settings.tag_1_4_11')"></dd>
+          </dl>
+        </details>
+        <div class="template-list">
+          <template x-for="(tpl, index) in $store.settings.templates" :key="index">
+            <fieldset class="template-item" x-data="{ recording: false, editing: !tpl.name }">
+              <div class="template-header">
+                <legend class="template-name" x-show="!editing" x-text="tpl.name"></legend>
+                <legend class="template-name" x-show="editing" x-text="$store.settings.t('settings.new_template')">New template</legend>
+                <input type="text" class="template-name" x-show="editing"
+                  x-init="if (editing) $nextTick(() => $el.focus())"
+                  @input="$store.settings.templates[index].name = $event.target.value"
+                  :placeholder="$store.settings.t('settings.template_name')"
+                  @keydown.enter="if ($event.target.value) editing = false"
+                  @blur="if ($store.settings.templates[index].name) editing = false"
+                />
+                <button class="btn-remove" @click="$store.settings.removeTemplate(index)" :title="$store.settings.t('settings.remove_template')">&times;</button>
+              </div>
+              <label x-text="$store.settings.t('settings.template_content')">Content</label>
+              <textarea rows="2" :value="tpl.template"
+                @input="$store.settings.templates[index].template = $event.target.value"
+              ></textarea>
+              <div class="template-shortcut">
+                <label x-text="$store.settings.t('settings.copy_shortcut')">Shortcut</label>
+                <div class="shortcut-input"
+                  tabindex="0"
+                  :class="{ recording }"
+                  x-text="recording ? $store.settings.t('settings.press_keys') : tpl.shortcut || $store.settings.t('settings.no_shortcut')"
+                  @click="recording = true; $el.focus()"
+                  @keydown="if (!recording) { if ($event.key === 'Enter' || $event.key === ' ') { $event.preventDefault(); recording = true; } return; } $event.preventDefault(); if (['Control', 'Alt', 'Shift', 'Meta'].includes($event.key)) return; $store.settings.updateTemplateShortcut(index, $event); recording = false"
+                  @blur="recording = false"
+                ></div>
+              </div>
+            </fieldset>
+          </template>
+        </div>
+        <button class="btn-add" @click="$store.settings.addTemplate()" x-text="'+ ' + $store.settings.t('settings.add_template')"><span aria-hidden="true">+</span> Add</button>
       </div>
     </main>
+
+    <!-- Barre d'actions fixe / Fixed action bar -->
+    <div class="actions">
+      <button class="btn-cancel" @click="$store.settings.cancel()" x-text="$store.settings.t('settings.cancel')">Cancel</button>
+      <button class="btn-save" @click="$store.settings.save()" x-text="$store.settings.t('settings.save')">Save</button>
+    </div>
+
     <script type="module" src="/src/settings.ts"></script>
   </body>
 </html>

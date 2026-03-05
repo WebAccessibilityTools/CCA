@@ -5,6 +5,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { emit } from "@tauri-apps/api/event";
 import Alpine from 'alpinejs';
 import { locale as getSystemLocale } from '@tauri-apps/plugin-os';
 import {
@@ -30,12 +32,48 @@ let systemLocale: string | undefined;
 // ALPINE STORE FOR SETTINGS
 // =============================================================================
 
+interface CopyTemplate {
+  name: string;
+  template: string;
+  shortcut: string;
+}
+
+const DEFAULT_SHORTCUT = navigator.platform.includes('Mac') ? 'Cmd+S' : 'Ctrl+S';
+
+const DEFAULT_TEMPLATES: CopyTemplate[] = [
+  { name: 'Short', template: '%f.hex%/%b.hex% = ratio de %cr%:1', shortcut: DEFAULT_SHORTCUT },
+];
+
+function loadTemplates(): CopyTemplate[] {
+  try {
+    const raw = localStorage.getItem('cca-copy-templates');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return structuredClone(DEFAULT_TEMPLATES);
+}
+
+function keyboardEventToShortcut(event: KeyboardEvent): string {
+  const parts: string[] = [];
+  if (event.metaKey) parts.push('Cmd');
+  if (event.ctrlKey) parts.push('Ctrl');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  parts.push(event.key.length === 1 ? event.key.toUpperCase() : event.key);
+  return parts.join('+');
+}
+
 Alpine.store('settings', {
   // Préférence actuelle / Current preference
   preference: 'auto' as LocalePreference,
 
   // Locale résolue pour réactivité Alpine / Resolved locale for Alpine reactivity
   locale: 'en',
+
+  // Liste des modèles de copie / Copy templates list
+  templates: loadTemplates() as CopyTemplate[],
+
+  // Durée du toast en secondes (0 = manuel) / Toast duration in seconds (0 = manual)
+  toastDuration: parseInt(localStorage.getItem('cca-toast-duration') ?? '3', 10),
 
   // Traduction réactive / Reactive translation
   t(key: string): string {
@@ -47,10 +85,50 @@ Alpine.store('settings', {
   apply(pref: LocalePreference): void {
     (this as any).preference = pref;
     setLocalePreference(pref, systemLocale);
-    // Synchronise le backend Rust / Sync Rust backend
     invoke('set_locale', { locale: getLocale() }).catch((err: unknown) => {
       console.error('Error setting locale in backend:', err);
     });
+  },
+
+  // Ajoute un modèle / Add a template
+  addTemplate(): void {
+    (this as any).templates.push({ name: '', template: '', shortcut: '' });
+  },
+
+  // Supprime un modèle / Remove a template
+  removeTemplate(index: number): void {
+    (this as any).templates.splice(index, 1);
+  },
+
+  // Met à jour le raccourci d'un modèle / Update a template's shortcut
+  updateTemplateShortcut(index: number, event: KeyboardEvent): void {
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return;
+    (this as any).templates[index].shortcut = keyboardEventToShortcut(event);
+  },
+
+  // Sauvegarde les préférences / Save preferences
+  async save(): Promise<void> {
+    // Filtre les modèles sans nom / Filter out templates without a name
+    (this as any).templates = (this as any).templates.filter((t: CopyTemplate) => t.name.trim() !== '');
+    localStorage.setItem('cca-copy-templates', JSON.stringify((this as any).templates));
+    localStorage.setItem('cca-toast-duration', String((this as any).toastDuration));
+    // Synchronise les modèles avec le backend pour le menu Édition
+    // Sync templates with backend for Edit menu
+    try {
+      await invoke('set_copy_templates', { templates: (this as any).templates });
+    } catch (error) {
+      console.error('Error syncing templates to backend:', error);
+    }
+    await emit('focus-main');
+    getCurrentWindow().close();
+  },
+
+  // Annule les modifications / Cancel changes
+  async cancel(): Promise<void> {
+    (this as any).templates = loadTemplates();
+    (this as any).toastDuration = parseInt(localStorage.getItem('cca-toast-duration') ?? '3', 10);
+    await emit('focus-main');
+    getCurrentWindow().close();
   },
 });
 

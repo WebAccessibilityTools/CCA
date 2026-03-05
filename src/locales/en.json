@@ -38,7 +38,31 @@
   },
   "settings": {
     "title": "Settings",
+    "tab_general": "General",
+    "tab_templates": "Copy templates",
     "language": "Language",
-    "auto": "Automatic (system)"
+    "auto": "Automatic (system)",
+    "copy_templates": "Copy templates",
+    "add_template": "Add template",
+    "remove_template": "Remove",
+    "new_template": "New template",
+    "template_content": "Content",
+    "template_name": "Template name",
+    "copy_shortcut": "Shortcut",
+    "press_keys": "Press keys\u2026",
+    "no_shortcut": "Click to set",
+    "toast_duration": "Toast duration",
+    "toast_manual": "Manual close",
+    "toast_seconds": "Seconds",
+    "save": "Save",
+    "cancel": "Cancel",
+    "tag_help_title": "Available tags",
+    "tag_f_hex": "Foreground colour (hex)",
+    "tag_b_hex": "Background colour (hex)",
+    "tag_cr": "Contrast ratio (raw)",
+    "tag_crr": "Contrast ratio (rounded)",
+    "tag_1_4_3": "1.4.3 Contrast (Minimum) result",
+    "tag_1_4_6": "1.4.6 Contrast (Enhanced) result",
+    "tag_1_4_11": "1.4.11 Non-text Contrast result"
   }
 }

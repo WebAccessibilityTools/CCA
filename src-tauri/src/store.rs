@@ -105,11 +105,21 @@ impl Default for ResultStore {
     }
 }
 
+/// Modèle de copie (template + raccourci)
+/// Copy template (template + shortcut)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CopyTemplate {
+    pub name: String,
+    pub template: String,
+    pub shortcut: String,
+}
+
 /// État de l'application wrappé dans un Mutex pour thread-safety
 /// Application state wrapped in Mutex for thread-safety
 pub struct AppState {
     pub store: Mutex<ResultStore>,
     pub locale: Mutex<String>,
+    pub templates: Mutex<Vec<CopyTemplate>>,
 }
 
 // =============================================================================
