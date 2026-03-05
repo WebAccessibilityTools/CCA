@@ -183,6 +183,7 @@ pub fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, 
         // Recalcule le ratio de contraste
         // Recalculate contrast ratio
         store.contrast_ratio_raw = store.foreground.get_contrast_ratio(&store.background);
+        store.contrast_ratio_rounded = (store.contrast_ratio_raw * config::ROUNDING_FACTOR).round() / config::ROUNDING_FACTOR;
 
         // Émet l'événement
         // Emit the event
