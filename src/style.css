@@ -61,21 +61,21 @@ strong {
    ----------------------------------------------------------------------------- */
 
 .btn {
-  background-color: var(--color-50);
-  color: var(--color-600);
   border: none;
   font-size: 1rem;
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 50%;
   cursor: pointer;
-  border: var(--button-border-size) solid var(--color-600);
   display: flex;
   justify-content: center;
   align-items: center;
 
+  background-color: var(--color-600);
+  color: var(--color-50);
+
   svg {
-    fill: var(--color-600);
+    fill: var(--color-50);
     height: 24px;
     width: 24px;
   }
@@ -91,10 +91,11 @@ strong {
 
   /* Button hover state*/
   &:hover {
-    background-color: var(--color-600);
-    color: var(--color-50);
+    background-color: var(--color-50);
+    color: var(--color-600);
+    border: var(--button-border-size) solid var(--color-600);
     svg {
-      fill: var(--color-50);
+      fill: var(--color-600);
     }
   }
 
