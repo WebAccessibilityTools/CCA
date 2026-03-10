@@ -4,25 +4,48 @@
    ============================================================================= */
 
 :root {
-  /* Zinc color scheme */
-  --color-50: oklch(0.99 0.00 0);
-  --color-100: oklch(0.97 0.00 286);
-  --color-200: oklch(0.92 0.00 286);
-  --color-300: oklch(0.87 0.01 286);
-  --color-400: oklch(0.71 0.01 286);
-  --color-500: oklch(0.55 0.01 286);
-  --color-600: oklch(0.44 0.01 286);
-  --color-700: oklch(0.37 0.01 286);
-  --color-800: oklch(0.27 0.01 286);
-  --color-900: oklch(0.21 0.01 286);
-  --color-950: oklch(0.14 0.00 286);
-
   --button-border-size: 2px;
 
-  --color-red-500: oklch(63% 0.14 25);
-  --color-red-700: oklch(50.5% 0.213 27.518);
-  --color-green-100: oklch(95% 0.05 145);
-  --color-green-700: oklch(53.2% 0.157 131.589);
+  --text-color: var(--color-zinc-600);
+  --text-color-light: var(--color-zinc-500);
+  --text-color-strong: var(--color-zinc-700);
+  --text-color-inverted: var(--color-zinc-50);
+  --text-color-disabled: var(--color-zinc-200);
+  --text-color-pass: var(--color-lime-700);
+  --text-color-fail: var(--color-red-800);
+  --text-color-recording: var(--color-sky-800);
+  --background-color: var(--color-zinc-50);
+  --background-color-recording: var(--color-zinc-100);
+  --background-color-grey: var(--color-zinc-100);
+  --background-color-inverted: var(--color-zinc-600);
+  --background-color-disabled: var(--color-zinc-200);
+  --border-color-light: var(--color-zinc-200);
+  --border-color: var(--color-zinc-400);
+  --border-color-strong: var(--color-zinc-700);
+  --border-color-disabled: var(--color-zinc-200);
+  --progress-background: var(--color-zinc-500);
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] {
+  --text-color: var(--color-zinc-200);
+  --text-color-light: var(--color-zinc-100);
+  --text-color-strong: var(--color-zinc-50);
+  --text-color-inverted: var(--color-zinc-600);
+  --text-color-disabled: var(--color-zinc-200);
+  --text-color-pass: var(--color-lime-300);
+  --text-color-fail: var(--color-red-300);
+  --text-color-recording: var(--color-sky-800);
+  --background-color: var(--color-zinc-600);
+  --background-color-recording: var(--color-zinc-100);
+  --background-color-grey: var(--color-zinc-700);
+  --background-color-inverted: var(--color-zinc-100);
+  --background-color-disabled: var(--color-zinc-200);
+  --border-color-light: var(--color-zinc-200);
+  --border-color: var(--color-zinc-400);
+  --border-color-strong: var(--color-zinc-50);
+  --border-color-disabled: var(--color-zinc-200);
+  --progress-background: var(--color-zinc-500);
 }
 
 /* -----------------------------------------------------------------------------
@@ -48,12 +71,12 @@ html, body {
 /* Body styles - vertical and horizontal centering */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--color-50);
-  color: var(--color-600);
+  background: var(--background-color);
+  color: var(--text-color);
 }
 
 strong {
-  color: var(--color-700);
+  color: var(--text-color-strong);
 }
 
 /* -----------------------------------------------------------------------------
@@ -71,11 +94,11 @@ strong {
   justify-content: center;
   align-items: center;
 
-  background-color: var(--color-600);
-  color: var(--color-50);
+  background-color: var(--background-color-inverted);
+  color: var(--text-color-inverted);
 
   svg {
-    fill: var(--color-50);
+    fill: var(--background-color);
     height: 24px;
     width: 24px;
   }
@@ -91,21 +114,21 @@ strong {
 
   /* Button hover state*/
   &:hover {
-    background-color: var(--color-50);
-    color: var(--color-600);
-    border: var(--button-border-size) solid var(--color-600);
+    background-color: var(--background-color);
+    color: var(--text-color);
+    border: var(--button-border-size) solid var(--text-color);
     svg {
-      fill: var(--color-600);
+      fill: var(--text-color);
     }
   }
 
   /* Disabled button state */
   &:disabled {
-    background: var(--color-200);
+    background: var(--background-color-disabled);
     cursor: wait;
-    border-color: var(--color-200);
+    border-color: var(--border-color-disabled);
     svg {
-      fill: var(--color-400);
+      fill: var(--text-color-disabled);
     }
   }
 }
@@ -190,8 +213,8 @@ strong {
 .results {
   .contrast-ratio {
     text-align: center;
-    border-top: 1px solid var(--color-300);
-    border-bottom: 1px solid var(--color-300);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
     margin: 0 2rem;
     padding: 1rem;
   }
@@ -218,11 +241,11 @@ strong {
       align-items: center;
       .pass {
         font-weight: bold;
-        color: var(--color-green-700);
+        color: var(--text-color-pass);
       }
       .fail {
         font-weight: bold;
-        color: var(--color-red-700);
+        color: var(--text-color-fail);
       }
     }
     progress-bar {
@@ -266,12 +289,12 @@ strong {
       .pass {
         font-weight: bold;
         font-size: 0.75rem;
-        color: var(--color-green-700);
+        color: var(--text-color-pass);
       }
       .fail {
         font-weight: bold;
         font-size: 0.75rem;
-        color: var(--color-red-700);
+        color: var(--text-color-fail);
       }
     }
   }
@@ -293,7 +316,7 @@ strong {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--color-500);
+    color: var(--text-color-light);
     padding: 0;
     margin-left: auto;
     svg {
@@ -320,8 +343,8 @@ strong {
       appearance: none;
       height: 6px;
       border-radius: 3px;
-      background: var(--color-300);
-      outline: none;/*
+      background: var(--progress-background);
+      outline: none;
       &::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
@@ -329,9 +352,9 @@ strong {
         height: 14px;
         border-radius: 50%;
         background: #fff;
-        border: 2px solid var(--color-400);
+        border: 1px solid var(--border-color);
         cursor: pointer;
-      }*/
+      }
     }
     .rgb-input {
       width: 4ch;
@@ -339,7 +362,8 @@ strong {
       font-variant-numeric: tabular-nums;
       font-size: 0.8rem;
       font-weight: 600;
-      border: 1px solid var(--color-300);
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
       border-radius: 3px;
       padding: 0 0.2rem;
       background: transparent;
@@ -348,9 +372,6 @@ strong {
       &::-webkit-outer-spin-button {
         -webkit-appearance: none;
         margin: 0;
-      }
-      &:focus {
-        outline: 1px solid var(--color-500);
       }
     }
   }
@@ -387,8 +408,8 @@ strong {
   bottom: 1rem;
   left: 50%;
   transform: translateX(-50%) translateY(100%);
-  background: var(--color-800);
-  color: var(--color-50);
+  background: var(--background-color-inverted);
+  color: var(--text-color-inverted);
   padding: 0.4rem 1rem;
   border-radius: 0.35rem;
   font-size: 0.8rem;
@@ -404,7 +425,6 @@ strong {
   .toast-close {
     background: none;
     border: none;
-    color: var(--color-50);
     font-size: 1.1rem;
     cursor: pointer;
     margin-left: 0.5rem;

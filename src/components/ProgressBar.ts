@@ -48,7 +48,7 @@ export class ProgressBar extends LitElement {
       width: 3px;
       height: 30px; 
 
-      background-color: var(--color-600); /* indicator color */
+      background-color: var(--background-color-inverted); /* indicator color */
       border-radius: 2px;
       box-shadow: 0 0 4px rgba(0,0,0,0.2);
 
@@ -66,7 +66,7 @@ export class ProgressBar extends LitElement {
       text-align: center;
       font-size: 13px;
       font-weight: bold;
-      color: var(--color-600);
+      color: var(--text-color);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -77,7 +77,7 @@ export class ProgressBar extends LitElement {
       transform: translateX(-50%);
       font-size: 13px;
       font-weight: bold;
-      color: var(--color-600);
+      color: var(--text-color);
       letter-spacing: 0.5px;
       white-space: nowrap;
     }

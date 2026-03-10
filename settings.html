@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings</title>
+    <link rel="stylesheet" href="/src/colors.css" />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/settings.css" />
   </head>
@@ -45,6 +46,20 @@
               <option value="auto" x-text="$store.settings.t('settings.auto')">Automatic (system)</option>
               <option value="en">English</option>
               <option value="fr">Français</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Thème / Theme -->
+        <div class="section">
+          <label for="settings-theme" class="section-label" x-text="$store.settings.t('settings.theme')">Theme</label>
+          <div class="field">
+            <select id="settings-theme"
+                :value="$store.settings.theme"
+                @change="$store.settings.setTheme($event.target.value)">
+              <option value="auto" x-text="$store.settings.t('settings.theme_auto')">Automatic (system)</option>
+              <option value="light" x-text="$store.settings.t('settings.theme_light')">Light</option>
+              <option value="dark" x-text="$store.settings.t('settings.theme_dark')">Dark</option>
             </select>
           </div>
         </div>

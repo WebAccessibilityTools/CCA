@@ -7,7 +7,7 @@
 
 body {
   font-size: 13px;
-  background: var(--color-100);
+  background: var(--background-color-grey);
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -28,12 +28,12 @@ main {
 .tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--color-200);
+  border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
-  background: var(--color-100);
   z-index: 1;
   padding-top: 1rem;
+  background-color: var(--background-color-grey);
 
   button {
     font-size: 13px;
@@ -41,17 +41,14 @@ main {
     padding: 0.5rem 1rem;
     border: none;
     background: none;
-    color: var(--color-400);
+    color: var(--text-color);
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    border-bottom: 3px solid transparent;
     margin-bottom: -1px;
-    &:hover {
-      color: var(--color-700);
-    }
 
     &.active {
-      color: var(--color-800);
-      border-bottom-color: var(--color-700);
+      color: var(--text-color-strong);
+      border-bottom-color: var(--border-color-strong);
       font-weight: 600;
     }
   }
@@ -67,20 +64,17 @@ main {
    ----------------------------------------------------------------------------- */
 
 .section {
-  background: var(--color-50);
-  border: 1px solid var(--color-200);
+  background: var(--background-color);
+  border: 1px solid var(--border-color-light);
   border-radius: 8px;
   padding: 0.875rem 1rem;
   margin-bottom: 0.75rem;
 }
 
 .section-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-500);
-  margin-bottom: 0.625rem;
 }
 
 /* -----------------------------------------------------------------------------
@@ -94,37 +88,19 @@ main {
   gap: 0.75rem;
 }
 
-.field + .field {
-  margin-top: 0.625rem;
-}
-
-.field label {
-  font-size: 13px;
-  color: var(--color-800);
-  white-space: nowrap;
-  min-width: 5.5rem;
-}
-
 select,
 textarea,
 input[type="number"],
 .shortcut-input {
   flex: 1;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 1rem;
   padding: 0.375rem 0.5rem;
-  border: 1px solid var(--color-200);
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color);
   border-radius: 5px;
-  background: var(--color-50);
-  color: var(--color-800);
-}
-
-select:focus,
-textarea:focus,
-input[type="number"]:focus {
-  outline: none;
-  border-color: var(--color-500);
-  box-shadow: 0 0 0 2px oklch(0.55 0.01 286 / 0.12);
+  background: var(--background-color);
+  color: var(--text-color-strong);
 }
 
 input[type="number"] {
@@ -134,7 +110,7 @@ input[type="number"] {
 
 .field-suffix {
   font-size: 12px;
-  color: var(--color-400);
+  color: var(--text-color-light);
 }
 
 /* -----------------------------------------------------------------------------
@@ -148,63 +124,56 @@ input[type="number"] {
   gap: 0.5rem;
 
   .template-item {
-    border: 1px solid var(--color-200);
+    border: 1px solid var(--border-color-light);
     border-radius: 5px;
-    padding: 0.625rem 0.625rem 0.5rem;
-    background: var(--color-50);
+    padding: 0.5rem;
+    background: var(--background-color);
     position: relative;
     textarea {
       width: 100%;
       resize: vertical;
       min-height: 5rem;
-      font-size: 12px;
+      font-size: 1rem;
       font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
     }
   }
 
   .template-header {
     display: flex;
-    gap: 0.375rem;
     align-items: center;
-    margin-bottom: 0.375rem;
+    margin-bottom: 0.5rem;
   }
 
   .template-name {
     flex: 1;
-    font-size: 13px;
+    font-size: 1.1rem;
     font-weight: 600;
     padding: 0.25rem 0.375rem;
-    color: var(--color-800);
+    color: var(--text-color-strong);
   }
 
   .template-shortcut {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.375rem;
   }
 
   .template-shortcut label {
-    font-size: 12px;
-    color: var(--color-500);
     white-space: nowrap;
   }
 }
 
+/* -----------------------------------------------------------------------------
+   RACCOURCIS
+   SHORTCUTS
+   ----------------------------------------------------------------------------- */
+
 .shortcut-input {
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
   padding: 0.25rem 0.5rem;
   text-align: center;
   min-width: 7rem;
-  color: var(--color-500);
-}
-
-.shortcut-input:focus {
-  outline: none;
-  border-color: var(--color-500);
-  box-shadow: 0 0 0 2px oklch(0.55 0.01 286 / 0.12);
 }
 
 .shortcut-row {
@@ -213,21 +182,16 @@ input[type="number"] {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.375rem 0;
-
-  label {
-    font-size: 13px;
-    color: var(--color-800);
-  }
 }
 
 .shortcut-row + .shortcut-row {
-  border-top: 1px solid var(--color-200);
+  border-top: 1px solid var(--border-color-light);
 }
 
 .shortcut-input.recording {
-  border-color: oklch(0.55 0.15 250);
-  background: oklch(0.97 0.02 250);
-  color: oklch(0.45 0.12 250);
+  border-color: var(--text-color-recording);
+  background:  var(--background-color-recording);
+  color:  var(--text-color-recording);
 }
 
 .btn-remove {
@@ -246,55 +210,53 @@ input[type="number"] {
 }
 
 .btn-add {
-  background: var(--color-50);
-  border: 1px dashed var(--color-200);
+  background: var(--background-color);
+  border: 1px dashed var(--border-color);
   border-radius: 5px;
   padding: 0.375rem;
   width: 100%;
   cursor: pointer;
   font-size: 12px;
-  color: var(--color-500);
+  color: var(--text-color-light);
   margin: 0.25rem 0;
 }
 
 .btn-add:hover {
-  background: var(--color-green-100);
+  background: var(--color-green-50);
   border-color: var(--color-green-700);
   color: var(--color-green-700);
 }
 
 .tag-help {
-  background: var(--color-50);
-  border: 1px solid var(--color-200);
+  background: var(--background-color);
+  border: 1px solid var(--border-color-light);
   border-radius: 8px;
-  padding: 0.625rem 0.875rem;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
 
   summary {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: bold;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-500);
+    color: var(--text-color);
     cursor: pointer;
-    user-select: none;
   }
   .tag-list {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: 0.25rem 0.75rem;
     margin-top: 0.5rem;
-    font-size: 12px;
+    font-size: 0.8rem;
     line-height: 1.6;
 
     dt {
       font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
-      font-weight: 600;
-      color: var(--color-700);
-      font-size: 11px;
+      font-weight: bold;
+      color: var(--text-color-strong);
     }
 
     dd {
-      color: var(--color-600);
+      color: var(--text-color);
       margin: 0;
     }
   }
@@ -310,8 +272,7 @@ input[type="number"] {
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
-  border-top: 1px solid var(--color-200);
-  background: var(--color-100);
+  border-top: 1px solid var(--border-color-light);
 }
 
 .actions button {
@@ -323,22 +284,24 @@ input[type="number"] {
 }
 
 .btn-cancel {
-  background: var(--color-50);
-  border: 1px solid var(--color-200);
-  color: var(--color-800);
+  background: var(--background-color);
+  border: 1px solid var(--border-color-light);
+  color: var(--text-color-light);
 }
 
 .btn-cancel:hover {
-  background: var(--color-200);
+  background: var(--background-color-grey);
+  color: var(--text-color-strong);
+  border-color: var(--border-color);
 }
 
 .btn-save {
-  background: var(--color-700);
-  border: 1px solid var(--color-700);
-  color: #fff;
+  background: var(--background-color-inverted);
+  color: var(--text-color-inverted);
+  border: 1px solid var(--border-color);
 }
 
 .btn-save:hover {
-  background: var(--color-800);
-  border-color: var(--color-800);
+  color: var(--text-color);
+  background: var(--background-color);
 }

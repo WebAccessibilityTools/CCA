@@ -43,8 +43,8 @@ For the previous Electron version, see the [CCAe](https://github.com/ThePaciello
 | Native colour picker (Rust) | Done |
 | Picker continue mode | Done |
 | Internationalisation (i18n) | Done |
-| Light/Dark mode | Planned |
-| Configurable picker shortcuts | Planned |
+| Light/Dark mode | Done |
+| Configurable picker shortcuts | Done |
 | RGB Sliders | Done |
 | Copy/Paste format templates | Done |
 | Colour name | Planned |

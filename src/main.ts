@@ -35,6 +35,9 @@ import { initLocale, onLocaleChange, setLocale } from './i18n';
 // Import system locale detection via Tauri plugin OS
 import { locale as getSystemLocale } from '@tauri-apps/plugin-os';
 
+// Import du module thème / Import theme module
+import { initTheme, applyTheme } from './theme';
+
 // Import Webcomponents
 import './components/ProgressBar';
 
@@ -219,6 +222,7 @@ onLocaleChange((locale) => {
 // Initialise Alpine.js et active la réactivité dans le DOM
 // Initialize Alpine.js and activate reactivity in the DOM
 Alpine.start();
+initTheme();
 
 // Fonction immédiatement invoquée asynchrone (IIFE) pour la synchronisation avec Tauri
 // Immediately Invoked Async Function Expression (IIFE) for Tauri synchronization
@@ -319,6 +323,9 @@ Alpine.start();
   // Step 5: Listen for focus-main event from settings window
   await listen('focus-main', () => {
     getCurrentWindow().setFocus();
+    // Réapplique le thème en cas de changement dans les settings
+    // Re-apply theme in case it changed in settings
+    applyTheme();
   });
 
   // Étape 5b : Envoie les modèles de copie au backend pour le menu Édition
