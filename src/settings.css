@@ -207,6 +207,23 @@ input[type="number"] {
   box-shadow: 0 0 0 2px oklch(0.55 0.01 286 / 0.12);
 }
 
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+
+  label {
+    font-size: 13px;
+    color: var(--color-800);
+  }
+}
+
+.shortcut-row + .shortcut-row {
+  border-top: 1px solid var(--color-200);
+}
+
 .shortcut-input.recording {
   border-color: oklch(0.55 0.15 250);
   background: oklch(0.97 0.02 250);

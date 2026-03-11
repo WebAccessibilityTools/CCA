@@ -21,6 +21,11 @@
           @click="activeTab = 'general'"
           x-text="$store.settings.t('settings.tab_general')">General</button>
         <button role="tab"
+          :aria-selected="activeTab === 'shortcuts'"
+          :class="{ active: activeTab === 'shortcuts' }"
+          @click="activeTab = 'shortcuts'"
+          x-text="$store.settings.t('settings.tab_shortcuts')">Shortcuts</button>
+        <button role="tab"
           :aria-selected="activeTab === 'templates'"
           :class="{ active: activeTab === 'templates' }"
           @click="activeTab = 'templates'"
@@ -55,6 +60,30 @@
             <p id="settings-toast-duration-unit" class="field-suffix" x-text="$store.settings.toastDuration === 0 ? $store.settings.t('settings.toast_manual') : $store.settings.t('settings.toast_seconds')"></p>
           </div>
         </div>
+
+      </div>
+
+      <!-- Tab : Raccourcis / Shortcuts -->
+      <div role="tabpanel" x-show="activeTab === 'shortcuts'" class="tab-panel">
+
+        <fieldset class="section">
+          <legend class="section-label" x-text="$store.settings.t('settings.shortcuts')">Keyboard shortcuts</legend>
+
+          <template x-for="(sc, index) in $store.settings.shortcuts" :key="sc.id">
+            <div class="shortcut-row" x-data="{ recording: false }">
+              <label x-text="$store.settings.t('settings.shortcut_' + sc.id)"></label>
+              <div class="shortcut-input"
+                tabindex="0"
+                :class="{ recording }"
+                x-text="recording ? $store.settings.t('settings.press_keys') : sc.key || $store.settings.t('settings.no_shortcut')"
+                @click="recording = true; $el.focus()"
+                @keydown="if (!recording) { if ($event.key === 'Enter' || $event.key === ' ') { $event.preventDefault(); recording = true; } return; } $event.preventDefault(); if (['Control', 'Alt', 'Shift', 'Meta'].includes($event.key)) return; $store.settings.updateShortcut(index, $event); recording = false"
+                @blur="recording = false"
+              ></div>
+            </div>
+          </template>
+
+        </fieldset>
 
       </div>
 

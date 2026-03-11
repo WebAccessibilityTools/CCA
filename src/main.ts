@@ -130,6 +130,11 @@ interface CopyTemplate {
   shortcut: string;
 }
 
+interface AppShortcut {
+  id: string;
+  key: string;
+}
+
 function loadCopyTemplates(): CopyTemplate[] {
   try {
     const raw = localStorage.getItem('cca-copy-templates');
@@ -139,10 +144,34 @@ function loadCopyTemplates(): CopyTemplate[] {
   return [{ template: '%f.hex%/%b.hex% = ratio de %cr%:1', shortcut: defaultShortcut }];
 }
 
+function loadShortcuts(): AppShortcut[] {
+  try {
+    const raw = localStorage.getItem('cca-shortcuts');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [
+    { id: 'pick_fg', key: 'F11' },
+    { id: 'pick_bg', key: 'F12' },
+  ];
+}
+
 document.addEventListener('keydown', (e) => {
   const pressed = eventToShortcut(e);
-  const templates = loadCopyTemplates();
 
+  // Raccourcis globaux (pickers) / Global shortcuts (pickers)
+  const shortcuts = loadShortcuts();
+  for (const sc of shortcuts) {
+    if (sc.key && sc.key === pressed) {
+      e.preventDefault();
+      const store = Alpine.store('uiStore') as UIStore;
+      if (sc.id === 'pick_fg') store.pickColor(true);
+      if (sc.id === 'pick_bg') store.pickColor(false);
+      return;
+    }
+  }
+
+  // Raccourcis des modèles de copie / Copy template shortcuts
+  const templates = loadCopyTemplates();
   for (const tpl of templates) {
     if (tpl.shortcut && tpl.shortcut === pressed) {
       e.preventDefault();

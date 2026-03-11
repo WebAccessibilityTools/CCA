@@ -38,6 +38,24 @@ interface CopyTemplate {
   shortcut: string;
 }
 
+interface AppShortcut {
+  id: string;
+  key: string;
+}
+
+const DEFAULT_SHORTCUTS: AppShortcut[] = [
+  { id: 'pick_fg', key: 'F11' },
+  { id: 'pick_bg', key: 'F12' },
+];
+
+function loadShortcuts(): AppShortcut[] {
+  try {
+    const raw = localStorage.getItem('cca-shortcuts');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return structuredClone(DEFAULT_SHORTCUTS);
+}
+
 const DEFAULT_SHORTCUT = navigator.platform.includes('Mac') ? 'Cmd+S' : 'Ctrl+S';
 
 const DEFAULT_TEMPLATES: CopyTemplate[] = [
@@ -69,6 +87,9 @@ Alpine.store('settings', {
   // Locale résolue pour réactivité Alpine / Resolved locale for Alpine reactivity
   locale: 'en',
 
+  // Raccourcis clavier / Keyboard shortcuts
+  shortcuts: loadShortcuts() as AppShortcut[],
+
   // Liste des modèles de copie / Copy templates list
   templates: loadTemplates() as CopyTemplate[],
 
@@ -88,6 +109,12 @@ Alpine.store('settings', {
     invoke('set_locale', { locale: getLocale() }).catch((err: unknown) => {
       console.error('Error setting locale in backend:', err);
     });
+  },
+
+  // Met à jour un raccourci / Update a shortcut
+  updateShortcut(index: number, event: KeyboardEvent): void {
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return;
+    (this as any).shortcuts[index].key = keyboardEventToShortcut(event);
   },
 
   // Ajoute un modèle / Add a template
@@ -111,6 +138,7 @@ Alpine.store('settings', {
     // Filtre les modèles sans nom / Filter out templates without a name
     (this as any).templates = (this as any).templates.filter((t: CopyTemplate) => t.name.trim() !== '');
     localStorage.setItem('cca-copy-templates', JSON.stringify((this as any).templates));
+    localStorage.setItem('cca-shortcuts', JSON.stringify((this as any).shortcuts));
     localStorage.setItem('cca-toast-duration', String((this as any).toastDuration));
     // Synchronise les modèles avec le backend pour le menu Édition
     // Sync templates with backend for Edit menu
@@ -126,6 +154,7 @@ Alpine.store('settings', {
   // Annule les modifications / Cancel changes
   async cancel(): Promise<void> {
     (this as any).templates = loadTemplates();
+    (this as any).shortcuts = loadShortcuts();
     (this as any).toastDuration = parseInt(localStorage.getItem('cca-toast-duration') ?? '3', 10);
     await emit('focus-main');
     getCurrentWindow().close();
