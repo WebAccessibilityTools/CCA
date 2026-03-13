@@ -30,6 +30,10 @@ mod store;
 /// Color manipulation functions
 mod color;
 
+/// Noms de couleurs CSS (W3C CSS Color Module Level 4)
+/// CSS named colors (W3C CSS Color Module Level 4)
+mod color_names;
+
 /// Gestion des profils ICC
 /// ICC profile management
 mod icc;
@@ -522,6 +526,7 @@ pub fn run() {
             store::pick_color,
             store::update_store,
             store::clear_store,
+            store::get_color_name,
             icc::list_icc_profiles,
             icc::select_icc_profile,
             icc::get_selected_icc_profile,

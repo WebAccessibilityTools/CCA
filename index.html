@@ -22,10 +22,10 @@
               x-bind:class="$store.uiStore.foregroundIsDark ? 'isDark' : 'isLight'"
             >
               <h2 x-text="$store.uiStore.t('color.foreground')">Foreground</h2>
-              <p
-                class="hex-value"
-                x-text="$store.uiStore.foregroundHex"
-              ></p>
+              <p class="color-value">
+                <span class="color-name" x-show="$store.uiStore.foregroundName" x-text="$store.uiStore.foregroundName"></span>
+                <span class="hex-value" :class="{ 'hex-secondary': $store.uiStore.foregroundName }" x-text="$store.uiStore.foregroundHex"></span>
+              </p>
               <button
                 class="btn"
                 @click="$store.uiStore.pickColor(true)"
@@ -134,10 +134,10 @@
                 x-bind:class="$store.uiStore.backgroundIsDark ? 'isDark' : 'isLight'"
               >
                 <h2 x-text="$store.uiStore.t('color.background')">Background</h2>
-                <p
-                  class="hex-value"
-                  x-text="$store.uiStore.backgroundHex"
-                ></p>
+                <p class="color-value">
+                  <span class="color-name" x-show="$store.uiStore.backgroundName" x-text="$store.uiStore.backgroundName"></span>
+                  <span class="hex-value" :class="{ 'hex-secondary': $store.uiStore.backgroundName }" x-text="$store.uiStore.backgroundHex"></span>
+                </p>
                 <button
                   class="btn"
                   @click="$store.uiStore.pickColor(false)"

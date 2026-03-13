@@ -76,6 +76,10 @@ export interface UIStore {
   // Foreground color in hexadecimal format
   foregroundHex: string;
 
+  // Nom CSS de la couleur de premier plan (vide si pas de correspondance exacte)
+  // CSS name of foreground color (empty if no exact match)
+  foregroundName: string;
+
   /// Si la couleur est sombre
   /// If the colour is dark
   foregroundIsDark: boolean;
@@ -87,6 +91,10 @@ export interface UIStore {
   // Couleur d'arrière-plan au format hexadécimal
   // Background color in hexadecimal format
   backgroundHex: string;
+
+  // Nom CSS de la couleur d'arrière-plan (vide si pas de correspondance exacte)
+  // CSS name of background color (empty if no exact match)
+  backgroundName: string;
 
   /// Si la couleur est sombre
   /// If the colour is dark
@@ -166,6 +174,10 @@ export const UIStore = {
   // Initial state: no foreground color
   foregroundHex: '',
 
+  // Nom CSS de la couleur de premier plan
+  // CSS name of foreground color
+  foregroundName: '',
+
   /// Si la couleur est sombre
   /// If the colour is dark
   foregroundIsDark: true,
@@ -177,6 +189,10 @@ export const UIStore = {
   // État initial : aucune couleur d'arrière-plan
   // Initial state: no background color
   backgroundHex: '',
+
+  // Nom CSS de la couleur d'arrière-plan
+  // CSS name of background color
+  backgroundName: '',
 
   /// Si la couleur est sombre
   /// If the colour is dark
@@ -280,6 +296,11 @@ export const UIStore = {
     // Update foreground color (hex format)
     this.foregroundHex = store.foreground_hex;
 
+    // Recherche le nom CSS exact / Look up exact CSS name
+    invoke<string>('get_color_name', { r: fr, g: fg, b: fb }).then((name) => {
+      this.foregroundName = name;
+    });
+
     /// Si la couleur est sombre
     /// If the colour is dark
     this.foregroundIsDark = store.foreground_is_dark;
@@ -295,6 +316,11 @@ export const UIStore = {
     // Met à jour la couleur d'arrière-plan (format hex)
     // Update background color (hex format)
     this.backgroundHex = store.background_hex;
+
+    // Recherche le nom CSS exact / Look up exact CSS name
+    invoke<string>('get_color_name', { r: br, g: bg, b: bb }).then((name) => {
+      this.backgroundName = name;
+    });
 
     /// Si la couleur est sombre
     /// If the colour is dark

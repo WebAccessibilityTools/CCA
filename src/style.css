@@ -391,11 +391,31 @@ strong {
   }
 }
 
+/* Conteneur nom + hex / Color name + hex container */
+.color-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+/* Nom CSS de la couleur / CSS color name */
+.color-name {
+  font-weight: 600;
+  font-size: 1.1em;
+  text-transform: capitalize;
+}
+
 /* Affichage de la valeur hexadécimale */
 /* Hexadecimal value display */
 .hex-value {
   font-family: 'Monaco', 'Menlo', monospace;
   letter-spacing: 2px;
+}
+
+/* Hex secondaire quand un nom est affiché / Secondary hex when name is shown */
+.hex-value.hex-secondary {
+  font-size: 0.75em;
+  opacity: 0.7;
 }
 
 /* -----------------------------------------------------------------------------

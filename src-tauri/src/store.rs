@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use crate::config;
 use crate::picker;
 use crate::color;
+use crate::color_names;
 use bigcolor::BigColor;
 
 // =============================================================================
@@ -199,6 +200,15 @@ pub fn update_store(app: AppHandle, state: tauri::State<AppState>, key: String, 
         // Emit the event
         let _ = app.emit("store-updated", store.clone());
     }
+}
+
+/// Retourne le nom de couleur CSS exact pour une valeur RGB, ou vide
+/// Returns the exact CSS color name for a given RGB value, or empty
+#[tauri::command]
+pub fn get_color_name(r: u8, g: u8, b: u8) -> String {
+    color_names::exact_color_name(r, g, b)
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Efface le store
